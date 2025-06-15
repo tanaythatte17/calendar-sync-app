@@ -1,0 +1,41 @@
+# Global
+.DS_Store
+.env
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Node (backend and frontend)
+backend/node_modules/
+frontend/node_modules/
+
+# Build artifacts
+frontend/build/
+backend/dist/
+
+# Environment files
+backend/.env
+frontend/.env
+
+# OS
+Thumbs.db
+*.swp
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Coverage reports
+coverage/
+backend/coverage/
+frontend/coverage/
+
+# Optional: logs folder
+backend/logs/
+frontend/logs/
+
+# Optional: others
+*.tgz

@@ -1,0 +1,31 @@
+{
+  "name": "calendar-sync-app-backend",
+  "version": "1.0.0",
+  "description": "Backend for calendar synchronization application",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "googleapis": "^149.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.0.1",
+    "nodemon": "^3.0.1",
+    "qs": "^6.14.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
