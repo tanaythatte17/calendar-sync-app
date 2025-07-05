@@ -20,6 +20,7 @@ app.use(cookieParser());
 app.use('/api/auth',authRoutes);
 app.use('/api/google', googleRoutes);
 app.use('/api/microsoft', microsoftRoutes);
+app.use('/api/suser', userRoutes);
 
 const PORT = process.env.PORT || 5000;
 
