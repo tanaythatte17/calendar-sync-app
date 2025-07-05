@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
+import { FaGoogle, FaMicrosoft } from 'react-icons/fa';
 
 interface CalendarAccount {
   id: string;
@@ -13,22 +14,45 @@ interface CalendarAccount {
 }
 
 interface Event {
-  id: string;
+  _id: string;
+  calendarAccountId: string;
+  source: 'google' | 'microsoft';
+  externalId: string;
   title: string;
-  start: string;
-  end: string;
   description?: string;
   location?: string;
-  calendarAccountId: string;
+  start: {
+    dateTime: string;
+    timeZone: string;
+  };
+  end: {
+    dateTime: string;
+    timeZone: string;
+  };
+  organizer?: {
+    email: string;
+    name: string;
+  };
+  attendees?: Array<{
+    email: string;
+    name: string;
+    responseStatus: string;
+  }>;
+  isRecurring: boolean;
+  recurringEventId?: string;
+  status: 'confirmed' | 'cancelled' | 'tentative';
+  htmlLink?: string;
+  updatedAt: string;
 }
 
 interface NewEvent {
   title: string;
-  start: string;
-  end: string;
-  description?: string;
-  location?: string;
+  description: string;
+  location: string;
+  startDateTime: string;
+  endDateTime: string;
   calendarAccountId: string;
+  attendees: string[];
 }
 
 const Dashboard: React.FC = () => {
@@ -43,12 +67,14 @@ const Dashboard: React.FC = () => {
   const [isAddEventModalOpen, setIsAddEventModalOpen] = useState(false);
   const [newEvent, setNewEvent] = useState<NewEvent>({
     title: '',
-    start: '',
-    end: '',
     description: '',
     location: '',
-    calendarAccountId: ''
+    startDateTime: '',
+    endDateTime: '',
+    calendarAccountId: '',
+    attendees: []
   });
+  const [attendeeEmail, setAttendeeEmail] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -66,7 +92,6 @@ const Dashboard: React.FC = () => {
         setLoading(false);
       }
     };
-
     fetchData();
   }, []);
 
@@ -99,7 +124,7 @@ const Dashboard: React.FC = () => {
 
   const getEventsForDate = (date: Date) => {
     return events.filter(event => {
-      const eventDate = new Date(event.start);
+      const eventDate = new Date(event.start.dateTime);
       return eventDate.toDateString() === date.toDateString();
     });
   };
@@ -113,35 +138,80 @@ const Dashboard: React.FC = () => {
 
   const handleAddEvent = async () => {
     try {
-      const response = await axios.post('/api/events', newEvent);
+      const eventData = {
+        title: newEvent.title,
+        description: newEvent.description,
+        location: newEvent.location,
+        start: {
+          dateTime: newEvent.startDateTime,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        },
+        end: {
+          dateTime: newEvent.endDateTime,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        },
+        calendarAccountId: newEvent.calendarAccountId,
+        attendees: newEvent.attendees.map(email => ({ email, name: email }))
+      };
+      const response = await axios.post('/api/events', eventData);
       setEvents([...events, response.data]);
       setIsAddEventModalOpen(false);
       setNewEvent({
         title: '',
-        start: '',
-        end: '',
         description: '',
         location: '',
-        calendarAccountId: ''
+        startDateTime: '',
+        endDateTime: '',
+        calendarAccountId: '',
+        attendees: []
       });
     } catch (err) {
       setError('Failed to create event');
     }
   };
 
+  const addAttendee = () => {
+    if (attendeeEmail && !newEvent.attendees.includes(attendeeEmail)) {
+      setNewEvent({
+        ...newEvent,
+        attendees: [...newEvent.attendees, attendeeEmail]
+      });
+      setAttendeeEmail('');
+    }
+  };
+
+  const removeAttendee = (email: string) => {
+    setNewEvent({
+      ...newEvent,
+      attendees: newEvent.attendees.filter(a => a !== email)
+    });
+  };
+
+  const getEventStatusColor = (status: string) => {
+    switch (status) {
+      case 'confirmed': return 'bg-green-100 text-green-800';
+      case 'cancelled': return 'bg-red-100 text-red-800';
+      case 'tentative': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-purple-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-600 text-lg">Loading your calendar...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg shadow-sm">
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl shadow-sm">
             <p className="text-red-600 flex items-center">
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -151,25 +221,46 @@ const Dashboard: React.FC = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
           {/* Calendar Section */}
-          <div className="lg:col-span-2">
-            <div className="bg-white shadow-lg rounded-xl p-6 border border-indigo-100">
-              <div className="calendar-container [&_.react-calendar]:w-full [&_.react-calendar]:border-0 [&_.react-calendar]:rounded-lg">
+          <div className="xl:col-span-3">
+            <div className="bg-white shadow-xl rounded-2xl p-6 sm:p-8 border border-blue-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
+                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Calendar</h1>
+                <button
+                  onClick={() => setIsAddEventModalOpen(true)}
+                  className="px-4 sm:px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center text-sm sm:text-base"
+                >
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create Event
+                </button>
+              </div>
+              
+              <div className="calendar-container [&_.react-calendar]:w-full [&_.react-calendar]:border-0 [&_.react-calendar]:rounded-xl [&_.react-calendar]:shadow-lg [&_.react-calendar]:min-h-[500px]">
                 <Calendar
                   onChange={handleDateClick}
                   value={selectedDate}
                   tileClassName={({ date }) => {
                     const eventsForDate = getEventsForDate(date);
-                    return eventsForDate.length > 0
-                      ? 'bg-gradient-to-br from-indigo-100 to-purple-100 text-indigo-700 font-semibold'
-                      : '';
+                    return [
+                      'min-h-[70px] sm:min-h-[90px] flex flex-col justify-between',
+                      eventsForDate.length > 0 ? 'bg-gradient-to-br from-blue-50 to-indigo-50 text-blue-700 font-semibold border border-blue-200' : '',
+                    ].join(' ');
                   }}
                   tileContent={({ date }) => {
                     const eventsForDate = getEventsForDate(date);
                     return eventsForDate.length > 0 ? (
-                      <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2">
-                        <div className="w-1 h-1 rounded-full bg-indigo-500"></div>
+                      <div className="flex items-center justify-center mt-2 group">
+                        <span className="relative group">
+                          <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                            <circle cx="10" cy="10" r="7" />
+                          </svg>
+                          <span className="absolute left-1/2 -translate-x-1/2 mt-2 px-2 py-1 rounded bg-gray-900 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            {eventsForDate.length} event{eventsForDate.length > 1 ? 's' : ''}
+                          </span>
+                        </span>
                       </div>
                     ) : null;
                   }}
@@ -181,59 +272,68 @@ const Dashboard: React.FC = () => {
                   minDetail="month"
                   maxDetail="month"
                   showNeighboringMonth={false}
-                  className="[&_.react-calendar__tile]:p-2 [&_.react-calendar__tile]:relative [&_.react-calendar__tile]:hover:bg-indigo-50 [&_.react-calendar__tile]:transition-colors [&_.react-calendar__tile]:rounded-lg [&_.react-calendar__tile--now]:bg-gradient-to-br [&_.react-calendar__tile--now]:from-indigo-200 [&_.react-calendar__tile--now]:to-purple-200 [&_.react-calendar__tile--now]:text-indigo-900 [&_.react-calendar__tile--active]:bg-gradient-to-br [&_.react-calendar__tile--active]:from-indigo-600 [&_.react-calendar__tile--active]:to-purple-600 [&_.react-calendar__tile--active]:text-white [&_.react-calendar__tile--active]:hover:from-indigo-700 [&_.react-calendar__tile--active]:hover:to-purple-700 [&_.react-calendar__navigation]:mb-4 [&_.react-calendar__navigation__label]:text-lg [&_.react-calendar__navigation__label]:font-semibold [&_.react-calendar__navigation__label]:text-gray-800 [&_.react-calendar__navigation__arrow]:text-indigo-600 [&_.react-calendar__navigation__arrow]:hover:text-indigo-800 [&_.react-calendar__month-view__weekdays]:text-gray-600 [&_.react-calendar__month-view__weekdays]:font-medium [&_.react-calendar__month-view__weekdays__weekday]:p-2 [&_.react-calendar__month-view__days__day--weekend]:text-red-500 [&_.react-calendar__month-view__days__day--neighboringMonth]:text-gray-400"
+                  className="[&_.react-calendar]:min-h-[500px] [&_.react-calendar__tile]:p-3 [&_.react-calendar__tile]:relative [&_.react-calendar__tile]:hover:bg-blue-50 [&_.react-calendar__tile]:transition-all [&_.react-calendar__tile]:rounded-lg [&_.react-calendar__tile]:cursor-pointer [&_.react-calendar__tile--now]:bg-gradient-to-br [&_.react-calendar__tile--now]:from-blue-200 [&_.react-calendar__tile--now]:to-indigo-200 [&_.react-calendar__tile--now]:text-blue-900 [&_.react-calendar__tile--active]:bg-gradient-to-br [&_.react-calendar__tile--active]:from-blue-600 [&_.react-calendar__tile--active]:to-indigo-600 [&_.react-calendar__tile--active]:text-white [&_.react-calendar__tile--active]:hover:from-blue-700 [&_.react-calendar__tile--active]:hover:to-indigo-700 [&_.react-calendar__navigation]:mb-6 [&_.react-calendar__navigation__label]:text-xl [&_.react-calendar__navigation__label]:font-bold [&_.react-calendar__navigation__label]:text-gray-800 [&_.react-calendar__navigation__arrow]:text-blue-600 [&_.react-calendar__navigation__arrow]:hover:text-blue-800 [&_.react-calendar__navigation__arrow]:text-2xl [&_.react-calendar__month-view__weekdays]:text-gray-600 [&_.react-calendar__month-view__weekdays]:font-semibold [&_.react-calendar__month-view__weekdays__weekday]:p-3 [&_.react-calendar__month-view__days__day--weekend]:text-red-500 [&_.react-calendar__month-view__days__day--neighboringMonth]:text-gray-400 [&_.react-calendar__month-view__days]:min-h-[400px]"
                 />
               </div>
             </div>
           </div>
 
           {/* Calendar Accounts Section */}
-          <div className="bg-white shadow-lg rounded-xl p-6 border border-indigo-100">
-            <h2 className="text-xl font-semibold mb-4 text-gray-800">Connected Accounts</h2>
+          <div className="bg-white shadow-xl rounded-2xl p-6 sm:p-8 border border-blue-100">
+            <h2 className="text-xl sm:text-2xl font-bold mb-6 text-gray-900 flex items-center gap-2">
+              Connected Accounts
+            </h2>
             <div className="space-y-4">
               {accounts.map((account) => (
                 <div
                   key={account.id}
-                  className="flex items-center justify-between p-4 border border-indigo-100 rounded-lg hover:bg-indigo-50 transition-all duration-200"
+                  className="flex items-center p-4 border border-blue-100 rounded-xl hover:bg-blue-50 transition-all duration-200 gap-3"
                 >
-                  <div>
-                    <p className="font-medium text-gray-800">{account.email}</p>
-                    <p className="text-sm text-gray-500 capitalize">{account.provider}</p>
+                  <div className="flex items-center gap-3 w-full">
+                    {account.provider === 'google' ? (
+                      <FaGoogle className="text-red-500 w-5 h-5 shrink-0" />
+                    ) : (
+                      <FaMicrosoft className="text-blue-700 w-5 h-5 shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p
+                        className="font-semibold text-gray-800 text-sm sm:text-base truncate max-w-[170px] sm:max-w-[220px]"
+                        title={account.email}
+                      >
+                        {account.email}
+                      </p>
+                      <p className="text-xs text-gray-500 capitalize truncate max-w-[170px] sm:max-w-[220px]" title={account.provider}>
+                        {account.provider}
+                      </p>
+                    </div>
                   </div>
-                  <span
-                    className={`px-3 py-1 text-sm rounded-full ${
-                      account.isConnected
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}
-                  >
-                    {account.isConnected ? 'Connected' : 'Disconnected'}
-                  </span>
                 </div>
               ))}
 
-              <div className="space-y-3 mt-6">
+              <div className="space-y-4 mt-8">
                 <button
                   onClick={handleConnectGoogle}
-                  className="w-full flex items-center justify-center px-4 py-3 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all duration-200 shadow-sm hover:shadow-md"
+                  className="w-full flex items-center justify-center px-4 sm:px-6 py-3 sm:py-4 border-2 border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
                   <img
                     src="https://www.google.com/favicon.ico"
                     alt="Google"
-                    className="w-5 h-5 mr-2"
+                    className="w-5 h-5 sm:w-6 sm:h-6 mr-2 sm:mr-3"
                   />
-                  Connect Google Calendar
+                  <span className="hidden sm:inline">Connect Google Calendar</span>
+                  <span className="sm:hidden">Google</span>
                 </button>
                 <button
                   onClick={handleConnectMicrosoft}
-                  className="w-full flex items-center justify-center px-4 py-3 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all duration-200 shadow-sm hover:shadow-md"
+                  className="w-full flex items-center justify-center px-4 sm:px-6 py-3 sm:py-4 border-2 border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
                   <img
                     src="https://www.microsoft.com/favicon.ico"
                     alt="Microsoft"
-                    className="w-5 h-5 mr-2"
+                    className="w-5 h-5 sm:w-6 sm:h-6 mr-2 sm:mr-3"
                   />
-                  Connect Microsoft Calendar
+                  <span className="hidden sm:inline">Connect Microsoft Calendar</span>
+                  <span className="sm:hidden">Microsoft</span>
                 </button>
               </div>
             </div>
@@ -243,64 +343,130 @@ const Dashboard: React.FC = () => {
 
       {/* Events Modal */}
       {isEventModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto shadow-2xl border border-indigo-100">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-semibold text-gray-800">
-                Events for {selectedDate.toLocaleDateString()}
+        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-blue-100">
+            <div className="flex justify-between items-center mb-6 sm:mb-8">
+              <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                Events for {selectedDate.toLocaleDateString('en-US', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
               </h2>
               <button
                 onClick={() => setIsEventModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-6 h-6 sm:w-8 sm:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-6">
               {getEventsForDate(selectedDate).length === 0 ? (
-                <div className="text-center py-8">
-                  <svg className="w-12 h-12 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="text-center py-12">
+                  <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  <p className="mt-2 text-gray-500">No events scheduled for this date</p>
+                  <p className="text-gray-500 text-lg mb-4">No events scheduled for this date</p>
+                  <button
+                    onClick={() => {
+                      setIsAddEventModalOpen(true);
+                      setIsEventModalOpen(false);
+                    }}
+                    className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center mx-auto"
+                  >
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Create Event
+                  </button>
                 </div>
               ) : (
-                getEventsForDate(selectedDate).map((event) => (
-                  <div
-                    key={event.id}
-                    className="p-4 border border-indigo-100 rounded-lg hover:bg-indigo-50 transition-all duration-200"
+                <>
+                  {getEventsForDate(selectedDate).map((event) => (
+                    <div
+                      key={event._id}
+                      className="p-4 sm:p-6 border border-blue-100 rounded-xl hover:bg-blue-50 transition-all duration-200 shadow-sm hover:shadow-md"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-4 gap-2">
+                        <div className="flex-1">
+                          <h4 className="text-lg sm:text-xl font-bold text-gray-900 mb-2">{event.title}</h4>
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-600">
+                            <span className="flex items-center">
+                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              {new Date(event.start.dateTime).toLocaleTimeString()} - {new Date(event.end.dateTime).toLocaleTimeString()}
+                            </span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEventStatusColor(event.status)}`}>
+                              {event.status}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-xs text-gray-500 capitalize bg-gray-100 px-2 py-1 rounded-full self-start">
+                          {event.source}
+                        </span>
+                      </div>
+                      
+                      {event.description && (
+                        <p className="text-gray-700 mb-4">{event.description}</p>
+                      )}
+                      
+                      {event.location && (
+                        <p className="text-gray-600 mb-4 flex items-center">
+                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          {event.location}
+                        </p>
+                      )}
+                      
+                      {event.attendees && event.attendees.length > 0 && (
+                        <div className="mb-4">
+                          <p className="text-sm font-medium text-gray-700 mb-2">Attendees:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {event.attendees.map((attendee, index) => (
+                              <span key={index} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
+                                {attendee.name || attendee.email}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {event.htmlLink && (
+                        <a
+                          href={event.htmlLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm font-medium"
+                        >
+                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                          Open in Calendar
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                  
+                  <button
+                    onClick={() => {
+                      setIsAddEventModalOpen(true);
+                      setIsEventModalOpen(false);
+                    }}
+                    className="w-full mt-8 px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center font-semibold"
                   >
-                    <h4 className="font-medium text-gray-800">{event.title}</h4>
-                    <p className="text-sm text-gray-500 mt-1">
-                      {new Date(event.start).toLocaleTimeString()} -{' '}
-                      {new Date(event.end).toLocaleTimeString()}
-                    </p>
-                    {event.location && (
-                      <p className="text-sm text-gray-500 mt-1 flex items-center">
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        {event.location}
-                      </p>
-                    )}
-                  </div>
-                ))
+                    <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Create New Event
+                  </button>
+                </>
               )}
-              <button
-                onClick={() => {
-                  setIsAddEventModalOpen(true);
-                  setIsEventModalOpen(false);
-                }}
-                className="w-full mt-6 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center"
-              >
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                </svg>
-                Add Event
-              </button>
             </div>
           </div>
         </div>
@@ -308,111 +474,161 @@ const Dashboard: React.FC = () => {
 
       {/* Add Event Modal */}
       {isAddEventModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl p-6 max-w-2xl w-full shadow-2xl border border-indigo-100">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-semibold text-gray-800">Add New Event</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-blue-100 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6 sm:mb-8">
+              <h2 className="text-2xl sm:text-3xl font-bold text-gray-900">Create New Event</h2>
               <button
                 onClick={() => {
                   setIsAddEventModalOpen(false);
-                  setIsEventModalOpen(true);
+                  if (getEventsForDate(selectedDate).length > 0) {
+                    setIsEventModalOpen(true);
+                  }
                 }}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
+                className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-6 h-6 sm:w-8 sm:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
+            
             <form onSubmit={(e) => { e.preventDefault(); handleAddEvent(); }} className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Event Title *</label>
                 <input
                   type="text"
                   value={newEvent.title}
                   onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg"
+                  placeholder="Enter event title"
                   required
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Start Date & Time *</label>
                   <input
                     type="datetime-local"
-                    value={newEvent.start}
-                    onChange={(e) => setNewEvent({ ...newEvent, start: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
+                    value={newEvent.startDateTime}
+                    onChange={(e) => setNewEvent({ ...newEvent, startDateTime: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">End Date & Time *</label>
                   <input
                     type="datetime-local"
-                    value={newEvent.end}
-                    onChange={(e) => setNewEvent({ ...newEvent, end: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
+                    value={newEvent.endDateTime}
+                    onChange={(e) => setNewEvent({ ...newEvent, endDateTime: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
                     required
                   />
                 </div>
               </div>
+              
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
-                  value={newEvent.description}
-                  onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
-                  rows={3}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Location</label>
                 <input
                   type="text"
                   value={newEvent.location}
                   onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  placeholder="Enter event location"
                 />
               </div>
+              
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Add to Calendar</label>
-                <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Description</label>
+                <textarea
+                  value={newEvent.description}
+                  onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  rows={4}
+                  placeholder="Enter event description"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Calendar Account *</label>
+                <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-200">
                   {accounts.filter(acc => acc.isConnected).map((account) => (
-                    <label key={account.id} className="flex items-center space-x-3 p-2 hover:bg-white rounded-lg transition-colors cursor-pointer">
+                    <label key={account.id} className="flex items-center space-x-3 p-3 hover:bg-white rounded-lg transition-colors cursor-pointer">
                       <input
-                        type="checkbox"
+                        type="radio"
+                        name="calendarAccount"
                         checked={newEvent.calendarAccountId === account.id}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setNewEvent({ ...newEvent, calendarAccountId: account.id });
-                          } else {
-                            setNewEvent({ ...newEvent, calendarAccountId: '' });
-                          }
-                        }}
-                        className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        onChange={() => setNewEvent({ ...newEvent, calendarAccountId: account.id })}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                        required
                       />
-                      <span className="text-sm text-gray-700">
+                      <span className="text-sm font-medium text-gray-700">
                         {account.email} ({account.provider})
                       </span>
                     </label>
                   ))}
                 </div>
               </div>
-              <div className="flex justify-end space-x-3 pt-4">
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Attendees</label>
+                <div className="space-y-3">
+                  <div className="flex space-x-2">
+                    <input
+                      type="email"
+                      value={attendeeEmail}
+                      onChange={(e) => setAttendeeEmail(e.target.value)}
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                      placeholder="Enter attendee email"
+                    />
+                    <button
+                      type="button"
+                      onClick={addAttendee}
+                      className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 font-medium"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  
+                  {newEvent.attendees.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {newEvent.attendees.map((email, index) => (
+                        <span key={index} className="flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                          {email}
+                          <button
+                            type="button"
+                            onClick={() => removeAttendee(email)}
+                            className="ml-2 text-blue-600 hover:text-blue-800"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex justify-end space-x-4 pt-6">
                 <button
                   type="button"
                   onClick={() => {
                     setIsAddEventModalOpen(false);
-                    setIsEventModalOpen(true);
+                    if (getEventsForDate(selectedDate).length > 0) {
+                      setIsEventModalOpen(true);
+                    }
                   }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all duration-200"
+                  className="px-6 py-3 border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all duration-200"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-sm hover:shadow-md"
+                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold"
                 >
                   Create Event
                 </button>
