@@ -1,231 +1,241 @@
-import axios from 'axios';
-import qs from 'qs';
-import { google } from 'googleapis';
-import CalendarAccount from '../models/CalendarAccount.js';
-import { getValidAccessToken } from '../utils/tokenRefresh.js';
-import { handleGoogleError, handleTokenRefreshError } from '../utils/errorHandler.js';
+import express from "express";
+import axios from "axios";
+import qs from "querystring";
+import { google } from "googleapis";
+import dotenv from "dotenv";
+import calendarAccount from "../models/calendarAccountModel.js";
+import User from "../models/userModel.js";
+import Event from "../models/eventModel.js";
+import { refreshCalendarAccessToken } from "../utils/refreshToken.js";
 
-const SCOPES = ['https://www.googleapis.com/auth/calendar'];
+const router = express.Router();
 
-const googleController = {
-  redirectToGoogle: (req, res) => {
-    const params = {
-      client_id: process.env.GOOGLE_CLIENT_ID,
-      response_type: 'code',
-      redirect_uri: process.env.GOOGLE_REDIRECT_URI,
-      access_type: 'offline',
-      prompt: 'consent',
-      scope: SCOPES.join(' '),
-      state: req.user._id
-    };
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${qs.stringify(params)}`;
-    res.redirect(authUrl);
-  },
+const Id = '68668b8db45ebe41d4b854b4';//mock for development
 
-  handleGoogleCallback: async (req, res) => {
-    const code = req.query.code;
+// Setup Google OAuth2 client
+dotenv.config();
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_REDIRECT_URI
+);
+// Mock DB
+const userTokens = {}; // { userId: { google: { tokens, syncToken }, outlook: { tokens, deltaLink } } }
 
-    try {
-      // Exchange code for tokens
-      const tokenRes = await axios.post(
-        'https://oauth2.googleapis.com/token',
-        qs.stringify({
-          client_id: process.env.GOOGLE_CLIENT_ID,
-          client_secret: process.env.GOOGLE_CLIENT_SECRET,
-          code,
-          redirect_uri: process.env.GOOGLE_REDIRECT_URI,
-          grant_type: 'authorization_code'
-        }),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-      );
+// ============ GOOGLE AUTH & SYNC ============
+export const connectGoogle = async (req, res) => {
+  const url = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: [
+      'https://www.googleapis.com/auth/calendar.readonly',
+      'https://www.googleapis.com/auth/userinfo.email',
+    ],
+    prompt: 'consent',
+    redirect_uri: process.env.GOOGLE_REDIRECT_URI, // Explicitly required
+  });
 
-      const tokens = tokenRes.data;
+  res.redirect(url);
+};
 
-      // Get user info
-      const userRes = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
-        headers: { Authorization: `Bearer ${tokens.access_token}` }
+export const googleCallback = async (req, res) => {
+  const { code } = req.query;
+
+  try {
+    const { tokens } = await oauth2Client.getToken(code);
+    
+    oauth2Client.setCredentials(tokens);
+
+    // Initialize OAuth2 API client
+    const oauth2 = google.oauth2({
+      version: 'v2',
+      auth: oauth2Client,
+    });
+
+    // Get user profile info
+    const userInfo = await oauth2.userinfo.get();
+    const userEmail = userInfo.data.email;
+
+    const existingAccount = await calendarAccount.findOne({
+      userId: Id,
+      email: userEmail,
+    });
+
+    if (existingAccount) {
+      existingAccount.accessToken = tokens.access_token;
+      existingAccount.refreshToken = tokens.refresh_token || existingAccount.refreshToken;
+      existingAccount.expiresAt = new Date(tokens.expiry_date);
+
+      await existingAccount.save();
+
+      return res.status(200).json({
+        message: "Existing calendar account updated successfully",
+        account: existingAccount,
       });
-
-      // Find or create calendar account
-      const calendarAccount = await CalendarAccount.findOneAndUpdate(
-        {
-          user: req.user._id,
-          provider: 'google',
-          email: userRes.data.email
-        },
-        {
-          accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token,
-          tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
-          isConnected: true,
-          connectedAt: new Date()
-        },
-        { upsert: true, new: true }
-      );
-
-      // Get initial events
-      const eventsRes = await axios.get(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events`,
-        {
-          headers: { Authorization: `Bearer ${tokens.access_token}` },
-          params: {
-            singleEvents: true,
-            orderBy: 'startTime',
-            timeMin: new Date().toISOString()
-          }
-        }
-      );
-
-      // Store sync token for future syncs
-      if (eventsRes.data.nextSyncToken) {
-        calendarAccount.syncToken = eventsRes.data.nextSyncToken;
-        await calendarAccount.save();
-      }
-
-      res.json({
-        message: 'Google calendar connected successfully',
-        calendarAccount,
-        events: eventsRes.data.items
-      });
-    } catch (error) {
-      const { status, message } = handleGoogleError(error);
-      res.status(status).json({ error: message });
     }
-  },
 
-  syncGoogleEvents: async (req, res) => {
-    try {
-      const calendarAccount = await CalendarAccount.findOne({
-        user: req.user._id,
-        provider: 'google',
-        isConnected: true
-      });
+    const provider = 'google'; // or 'microsoft'
+    const accessToken = tokens.access_token;
+    const refreshToken = tokens.refresh_token;
+    
+    const newCalendarAccount = new calendarAccount({
+      userId:Id,
+      email: userEmail,
+      provider,
+      accessToken,
+      refreshToken,
+      expiresAt: new Date(tokens.expiry_date),
+    });
 
-      if (!calendarAccount) {
-        return res.status(404).json({ message: 'No connected Google calendar found' });
-      }
+    await newCalendarAccount.save();
 
-      // Get valid access token (refreshes if needed)
-      const accessToken = await getValidAccessToken(calendarAccount);
+    await User.findByIdAndUpdate(
+      Id,
+      { $push: { calendarAccounts: newCalendarAccount._id } },
+      { new: true }
+    );
 
-      // Use sync token if available, otherwise get all events
-      const params = calendarAccount.syncToken
-        ? { syncToken: calendarAccount.syncToken }
-        : {
-            singleEvents: true,
-            orderBy: 'startTime',
-            timeMin: new Date().toISOString()
-          };
-
-      const eventsRes = await axios.get(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-          params
-        }
-      );
-
-      // Update sync token for future syncs
-      if (eventsRes.data.nextSyncToken) {
-        calendarAccount.syncToken = eventsRes.data.nextSyncToken;
-        await calendarAccount.save();
-      }
-
-      res.json({
-        message: 'Events synced successfully',
-        events: eventsRes.data.items
-      });
-    } catch (error) {
-      if (error.message === 'Failed to refresh Google token') {
-        const { status, message } = handleTokenRefreshError(error, 'Google');
-        return res.status(status).json({ error: message });
-      }
-      const { status, message } = handleGoogleError(error);
-      res.status(status).json({ error: message });
-    }
-  },
-
-  createGoogleEvent: async (req, res) => {
-    try {
-      const { summary, description, startDateTime, endDateTime } = req.body;
-
-      if (!summary || !startDateTime || !endDateTime) {
-        return res.status(400).json({ message: 'Missing required fields' });
-      }
-
-      const calendarAccount = await CalendarAccount.findOne({
-        user: req.user._id,
-        provider: 'google',
-        isConnected: true
-      });
-
-      if (!calendarAccount) {
-        return res.status(404).json({ message: 'No connected Google calendar found' });
-      }
-
-      // Get valid access token (refreshes if needed)
-      const accessToken = await getValidAccessToken(calendarAccount);
-
-      const event = {
-        summary,
-        description,
-        start: {
-          dateTime: startDateTime,
-          timeZone: 'UTC'
-        },
-        end: {
-          dateTime: endDateTime,
-          timeZone: 'UTC'
-        }
-      };
-
-      const response = await axios.post(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events`,
-        event,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        }
-      );
-
-      res.status(200).json({
-        message: 'Event created successfully',
-        eventId: response.data.id,
-        htmlLink: response.data.htmlLink
-      });
-    } catch (error) {
-      if (error.message === 'Failed to refresh Google token') {
-        const { status, message } = handleTokenRefreshError(error, 'Google');
-        return res.status(status).json({ error: message });
-      }
-      const { status, message } = handleGoogleError(error);
-      res.status(status).json({ error: message });
-    }
-  },
-
-  disconnectGoogle: async (req, res) => {
-    try {
-      const calendarAccount = await CalendarAccount.findOne({
-        user: req.user._id,
-        provider: 'google'
-      });
-
-      if (!calendarAccount) {
-        return res.status(404).json({ message: 'No connected Google calendar found' });
-      }
-
-      calendarAccount.isConnected = false;
-      calendarAccount.accessToken = null;
-      calendarAccount.refreshToken = null;
-      calendarAccount.tokenExpiry = null;
-      calendarAccount.syncToken = null;
-      await calendarAccount.save();
-
-      res.json({ message: 'Google calendar disconnected successfully' });
-    } catch (error) {
-      const { status, message } = handleGoogleError(error);
-      res.status(status).json({ error: message });
-    }
+    return res.status(201).json({
+      message: "Calendar account linked successfully",
+      account: newCalendarAccount,
+    });
+  } catch (err) {
+    console.error('Error in googleCallback:', err.message || err);
+    res.status(500).send('Google authentication failed');
   }
 };
 
-export default googleController;
+export const syncGoogle = async (req, res) => {
+  try {
+    const userId = Id; // assuming you use auth middleware
+    const userEmail = 'tanaythatte17@gmail.com';
+
+    const account = await calendarAccount.findOne({
+      userId: userId,
+      provider: 'google',
+      email: userEmail,
+    });
+
+    if (!account) {
+      return res.status(400).json({ error: "No linked Google account found." });
+    }
+
+    if (account.expiresAt && account.expiresAt < new Date()) {
+      console.log("Google token expired, refreshing...");
+
+      const tokens = await refreshCalendarAccessToken({
+        accountId: account._id,
+        provider: 'google',
+        refreshToken: account.refreshToken,
+        tokenUrl: 'https://oauth2.googleapis.com/token',
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      });
+
+      account.accessToken = tokens.accessToken; // keep local variable updated
+    }
+
+    oauth2Client.setCredentials({
+      access_token: account.accessToken,
+      refresh_token: account.refreshToken,
+    });
+
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    const params = {
+      calendarId: 'primary',
+      maxResults: 2500,
+      showDeleted: true,
+    };
+
+    if (account.syncToken) {
+      params.syncToken = account.syncToken;
+    } else {
+      // first-time sync within 2-year window
+      const now = new Date();
+      const twoYearsAgo = new Date();
+      twoYearsAgo.setFullYear(now.getFullYear() - 2);
+      const twoYearsAhead = new Date();
+      twoYearsAhead.setFullYear(now.getFullYear() + 2);
+      params.timeMin = twoYearsAgo.toISOString();
+      params.timeMax = twoYearsAhead.toISOString();
+    }
+
+    const result = await calendar.events.list(params);
+    const events = result.data.items;
+
+    for (const e of events) {
+      // handle deleted/cancelled events
+      if (e.status === 'cancelled') {
+        await Event.deleteOne({
+          calendarAccountId: account._id,
+          externalId: e.id,
+          source: 'google'
+        });
+        continue;
+      }
+
+      // otherwise add or update
+      await Event.findOneAndUpdate(
+        {
+          calendarAccountId: account._id,
+          externalId: e.id,
+          source: 'google'
+        },
+        {
+          calendarAccountId: account._id,
+          source: 'google',
+          externalId: e.id,
+          title: e.summary,
+          description: e.description,
+          location: e.location,
+          start: {
+            dateTime: e.start?.dateTime || e.start?.date,
+            timeZone: e.start?.timeZone
+          },
+          end: {
+            dateTime: e.end?.dateTime || e.end?.date,
+            timeZone: e.end?.timeZone
+          },
+          organizer: {
+            email: e.organizer?.email,
+            name: e.organizer?.displayName
+          },
+          attendees: e.attendees?.map(a => ({
+            email: a.email,
+            name: a.displayName,
+            responseStatus: a.responseStatus
+          })),
+          isRecurring: !!e.recurringEventId,
+          recurringEventId: e.recurringEventId,
+          status: e.status,
+          htmlLink: e.htmlLink,
+          raw: e,
+          updatedAt: new Date()
+        },
+        { upsert: true, new: true }
+      );
+    }
+
+    // save sync token
+    account.syncToken = result.data.nextSyncToken;
+    account.lastSyncedAt = new Date();
+    await account.save();
+
+    res.json({
+      message: "Google calendar sync complete",
+      synced: events.length
+    });
+
+  } catch (err) {
+    if (err.code === 410) {
+      // token invalid
+      await calendarAccount.updateOne(
+        { userId: req.user._id, provider: 'google' },
+        { $unset: { syncToken: "" } }
+      );
+      return res.status(410).send("Sync token expired, please reconnect.");
+    }
+    console.error("Google sync failed:", err);
+    res.status(500).send("Google sync failed.");
+  }
+};

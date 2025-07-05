@@ -1,61 +1,55 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-const eventSchema = new mongoose.Schema({
-  calendarAccount: {
+const EventSchema = new mongoose.Schema({
+  calendarAccountId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'CalendarAccount',
     required: true
   },
-  externalId: {
+  source: {
     type: String,
+    enum: ['google', 'microsoft'],
     required: true
   },
-  summary: {
+  externalId: { // ID from Google/Microsoft (used for sync updates)
     type: String,
-    required: true
+    required: true,
+    index: true
   },
-  description: {
-    type: String,
-    default: ''
-  },
+  title: { type: String },
+  description: { type: String },
+  location: { type: String },
+
   start: {
-    type: Date,
-    required: true
+    dateTime: { type: Date, required: true },
+    timeZone: { type: String }
   },
   end: {
-    type: Date,
-    required: true
+    dateTime: { type: Date, required: true },
+    timeZone: { type: String }
   },
-  location: {
-    type: String,
-    default: ''
+
+  organizer: {
+    email: { type: String },
+    name: { type: String }
   },
-  attendees: [String],
-  isAllDay: Boolean,
-  recurrence: [String],
-  reminders: [Object],
-  status: {
-    type: String,
-    enum: ['confirmed', 'tentative', 'cancelled'],
-    default: 'confirmed'
-  },
-  raw: Object,
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
-}, {
-  timestamps: true
+  attendees: [
+    {
+      email: String,
+      name: String,
+      responseStatus: String
+    }
+  ],
+
+  isRecurring: { type: Boolean, default: false },
+  recurringEventId: { type: String }, // For instances of recurring events
+
+  status: { type: String, enum: ['confirmed', 'cancelled', 'tentative'], default: 'confirmed' },
+  htmlLink: { type: String }, // Link to open event in calendar UI
+  raw: { type: mongoose.Schema.Types.Mixed }, // Store original raw payload for debugging or future use
+
+  updatedAt: { type: Date, default: Date.now }
 });
 
-eventSchema.index({ calendarAccount: 1, externalId: 1 }, { unique: true });
-
-eventSchema.index({ start: 1 });
-eventSchema.index({ end: 1 });
-
-const Event = mongoose.model('Event', eventSchema);
+const Event = mongoose.model("Event", EventSchema);
 export default Event;

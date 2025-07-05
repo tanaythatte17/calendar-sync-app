@@ -1,64 +1,31 @@
-import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
+import mongoose from "mongoose";
 
-const userSchema = new mongoose.Schema({
-  email: { 
-    type: String, 
-    required: true, 
-    unique: true,
-    trim: true,
-    lowercase: true
-  },
-  name: { 
-    type: String, 
+const UserSchema = new mongoose.Schema({
+  email: {
+    type: String,
     required: true,
+    unique: true,
+    lowercase: true,
     trim: true
   },
-  password: { 
-    type: String, 
-    required: true 
-  },
-  role: {
+  password: {
     type: String,
-    enum: ['user', 'admin'],
-    default: 'user'
+    required: true
+    // Store hashed password using bcrypt or argon2
   },
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
+  name: {
+    type: String,
+    required: true
   },
-  updatedAt: {
+  calendarAccounts: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CalendarAccount'
+  }],
+  createdAt: {
     type: Date,
     default: Date.now
   }
-}, {
-  timestamps: true
 });
 
-// Hash password before saving
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    console.error('Error hashing password:', error);
-    next(error);
-  }
-});
-
-// Method to compare password
-userSchema.methods.comparePassword = async function(candidatePassword) {
-  try {
-    const isMatch = await bcrypt.compare(candidatePassword, this.password);
-    return isMatch;
-  } catch (error) {
-    console.error('Error comparing passwords:', error);
-    throw error;
-  }
-};
-
-const User = mongoose.model('User', userSchema);
+const User = mongoose.model("User", UserSchema);
 export default User;

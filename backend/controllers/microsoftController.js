@@ -1,215 +1,216 @@
-import axios from 'axios';
-import qs from 'qs';
-import CalendarAccount from '../models/CalendarAccount.js';
-import { getValidAccessToken } from '../utils/tokenRefresh.js';
-import { handleMicrosoftError, handleTokenRefreshError } from '../utils/errorHandler.js';
+import express from "express";
+import axios from "axios";
+import qs from "querystring";
+import dotenv from "dotenv";
+import calendarAccount from "../models/calendarAccountModel.js";
+import User from "../models/userModel.js";
+import Event from "../models/eventModel.js";
 
-const SCOPES = ['Calendars.ReadWrite', 'offline_access'];
+dotenv.config();
 
-const microsoftController = {
-  redirectToMicrosoft: (req, res) => {
-    const params = {
-      client_id: process.env.MICROSOFT_CLIENT_ID,
-      response_type: 'code',
-      redirect_uri: process.env.MICROSOFT_REDIRECT_URI,
-      response_mode: 'query',
-      scope: SCOPES.join(' '),
-      state: req.user._id
-    };
-    const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${qs.stringify(params)}`;
-    res.redirect(authUrl);
-  },
+// Mock DB
+const userTokens = {}; // { userId: { google: { tokens, syncToken }, outlook: { tokens, deltaLink } } }
 
-  handleMicrosoftCallback: async (req, res) => {
+// ============ MICROSOFT AUTH & SYNC ============
+export const connectMicrosoft = (req, res) => {
+  const params = qs.stringify({
+    client_id: process.env.MICROSOFT_CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: process.env.MICROSOFT_REDIRECT_URI,
+    response_mode: 'query',
+    scope: 'openid profile email offline_access User.Read Calendars.Read Calendars.ReadWrite',
+  });
+  res.redirect(`https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`);
+};
+
+export const microsoftCallback = async (req, res) => {
+  try {
     const code = req.query.code;
+  
+    const tokenRes = await axios.post(
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      qs.stringify({
+        client_id: process.env.MICROSOFT_CLIENT_ID,
+        scope: 'openid profile email offline_access User.Read Calendars.Read Calendars.ReadWrite',
+        code,
+        redirect_uri: process.env.MICROSOFT_REDIRECT_URI,
+        grant_type: 'authorization_code',
+        client_secret: process.env.MICROSOFT_CLIENT_SECRET,
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    const tokens = tokenRes.data;
+    console.log(tokens);
+    // fetch user profile from Microsoft Graph
+    console.log('Access token is', tokens.access_token);
 
-    try {
-      // Exchange code for tokens
-      const tokenRes = await axios.post(
-        'https://login.microsoftonline.com/common/oauth2/v2.0/token',
-        qs.stringify({
-          client_id: process.env.MICROSOFT_CLIENT_ID,
-          scope: SCOPES.join(' '),
-          code,
-          redirect_uri: process.env.MICROSOFT_REDIRECT_URI,
-          grant_type: 'authorization_code',
-          client_secret: process.env.MICROSOFT_CLIENT_SECRET,
-        }),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-      );
+    const userRes = await axios.get('https://graph.microsoft.com/v1.0/me', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    console.log(userRes);
+    const userEmail = userRes.data.mail || userRes.data.userPrincipalName;
 
-      const tokens = tokenRes.data;
+    const userId = '68668b8db45ebe41d4b854b4';
 
-      // Get user info
-      const userRes = await axios.get('https://graph.microsoft.com/v1.0/me', {
-        headers: { Authorization: `Bearer ${tokens.access_token}` }
+    const existingAccount = await calendarAccount.findOne({
+      userId: userId,
+      email: userEmail,
+      provider: 'microsoft',
+    });
+    if (existingAccount) {
+      existingAccount.accessToken = tokens.access_token;
+      existingAccount.refreshToken = tokens.refresh_token || existingAccount.refreshToken;
+      existingAccount.expiresAt = new Date(Date.now() + tokens.expires_in * 1000); // if you track expiry
+      await existingAccount.save();
+
+      return res.status(200).json({
+        message: "Existing calendar account updated successfully",
+        account: existingAccount
+      });
+    }
+
+    const provider = 'microsoft';
+    const accessToken = tokens.access_token;
+    const refreshToken = tokens.refresh_token;
+
+    const newCalendarAccount = new calendarAccount({
+      userId: userId,
+      email: userEmail,
+      provider,
+      accessToken,
+      refreshToken,
+      deltaLink: null,
+      expiresAt: new Date(Date.now() + tokens.expires_in * 1000), // initialize delta link
+    });
+
+    await newCalendarAccount.save();
+
+    await User.findByIdAndUpdate(
+      userId,
+      { $push: { calendarAccounts: newCalendarAccount._id } },
+      { new: true }
+    );
+
+    return res.status(201).json({
+      message: "Calendar account linked successfully",
+      account: newCalendarAccount,
+    });
+  } catch (err) {
+    console.error("Error in microsoftCallback:", err.message || err);
+    res.status(500).send("Microsoft authentication failed");
+  }
+};
+
+export const syncMicrosoft = async (req, res) => {
+  try {
+    const userId = '68668b8db45ebe41d4b854b4'; // ideally from req.user._id
+    const userEmail = 'tanaythatte17@gmail.com'; // adjust this as needed
+
+    const account = await calendarAccount.findOne({
+      userId: userId,
+      provider: 'microsoft',
+      email: userEmail,
+    });
+
+    if (!account) {
+      return res.status(400).json({ error: "No linked Microsoft account found." });
+    }
+
+    if (account.expiresAt && account.expiresAt < new Date()) {
+      console.log("Microsoft token expired, refreshing...");
+
+      const tokens = await refreshCalendarAccessToken({
+        accountId: account._id,
+        provider: 'microsoft',
+        refreshToken: account.refreshToken,
+        tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        clientId: process.env.MICROSOFT_CLIENT_ID,
+        clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
       });
 
-      // Find or create calendar account
-      const calendarAccount = await CalendarAccount.findOneAndUpdate(
+      account.accessToken = tokens.accessToken; // keep local variable updated
+    }
+
+    const headers = { Authorization: `Bearer ${account.accessToken}` };
+    const deltaUrl = account.deltaLink || 'https://graph.microsoft.com/v1.0/me/events';
+
+    const response = await axios.get(deltaUrl, { headers });
+    const events = response.data.value;
+
+    // store the new delta link
+    const newDeltaLink = response.data['@odata.deltaLink'] || account.deltaLink;
+    account.deltaLink = newDeltaLink;
+    account.lastSyncedAt = new Date();
+    await account.save();
+
+    for (const e of events) {
+      if (e["@removed"]) {
+        // event was deleted
+        await Event.deleteOne({
+          calendarAccountId: account._id,
+          externalId: e.id,
+          source: 'microsoft',
+        });
+        continue;
+      }
+
+      // otherwise create or update
+      await Event.findOneAndUpdate(
         {
-          user: req.user._id,
-          provider: 'microsoft',
-          email: userRes.data.mail || userRes.data.userPrincipalName
+          calendarAccountId: account._id,
+          externalId: e.id,
+          source: 'microsoft',
         },
         {
-          accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token,
-          tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000),
-          isConnected: true,
-          connectedAt: new Date()
+          calendarAccountId: account._id,
+          source: 'microsoft',
+          externalId: e.id,
+          title: e.subject,
+          description: e.bodyPreview,
+          location: e.location?.displayName,
+          start: {
+            dateTime: e.start?.dateTime,
+            timeZone: e.start?.timeZone,
+          },
+          end: {
+            dateTime: e.end?.dateTime,
+            timeZone: e.end?.timeZone,
+          },
+          organizer: {
+            email: e.organizer?.emailAddress?.address,
+            name: e.organizer?.emailAddress?.name,
+          },
+          attendees: e.attendees?.map(a => ({
+            email: a.emailAddress?.address,
+            name: a.emailAddress?.name,
+            responseStatus: a.status?.response,
+          })),
+          isRecurring: e.type === 'seriesMaster',
+          recurringEventId: e.seriesMasterId,
+          status: e.showAs || 'busy',
+          htmlLink: e.webLink,
+          raw: e,
+          updatedAt: new Date()
         },
         { upsert: true, new: true }
       );
-
-      // Get initial events
-      const eventsRes = await axios.get('https://graph.microsoft.com/v1.0/me/events/delta', {
-        headers: { Authorization: `Bearer ${tokens.access_token}` }
-      });
-
-      // Store delta link for future syncs
-      if (eventsRes.data['@odata.deltaLink']) {
-        calendarAccount.syncToken = eventsRes.data['@odata.deltaLink'];
-        await calendarAccount.save();
-      }
-
-      res.json({
-        message: 'Microsoft calendar connected successfully',
-        calendarAccount,
-        events: eventsRes.data.value
-      });
-    } catch (error) {
-      const { status, message } = handleMicrosoftError(error);
-      res.status(status).json({ error: message });
     }
-  },
 
-  syncMicrosoftEvents: async (req, res) => {
-    try {
-      const calendarAccount = await CalendarAccount.findOne({
-        user: req.user._id,
-        provider: 'microsoft',
-        isConnected: true
-      });
+    res.json({
+      message: "Microsoft calendar sync complete",
+      synced: events.length
+    });
 
-      if (!calendarAccount) {
-        return res.status(404).json({ message: 'No connected Microsoft calendar found' });
-      }
-
-      // Get valid access token (refreshes if needed)
-      const accessToken = await getValidAccessToken(calendarAccount);
-
-      // Use delta link if available, otherwise get all events
-      const url = calendarAccount.syncToken || 'https://graph.microsoft.com/v1.0/me/events/delta';
-      
-      const eventsRes = await axios.get(url, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-
-      // Update delta link for future syncs
-      if (eventsRes.data['@odata.deltaLink']) {
-        calendarAccount.syncToken = eventsRes.data['@odata.deltaLink'];
-        await calendarAccount.save();
-      }
-
-      res.json({
-        message: 'Events synced successfully',
-        events: eventsRes.data.value
-      });
-    } catch (error) {
-      if (error.message === 'Failed to refresh Microsoft token') {
-        const { status, message } = handleTokenRefreshError(error, 'Microsoft');
-        return res.status(status).json({ error: message });
-      }
-      const { status, message } = handleMicrosoftError(error);
-      res.status(status).json({ error: message });
-    }
-  },
-
-  createMicrosoftEvent: async (req, res) => {
-    try {
-      const { summary, description, startDateTime, endDateTime } = req.body;
-
-      if (!summary || !startDateTime || !endDateTime) {
-        return res.status(400).json({ message: 'Missing required fields' });
-      }
-
-      const calendarAccount = await CalendarAccount.findOne({
-        user: req.user._id,
-        provider: 'microsoft',
-        isConnected: true
-      });
-
-      if (!calendarAccount) {
-        return res.status(404).json({ message: 'No connected Microsoft calendar found' });
-      }
-
-      // Get valid access token (refreshes if needed)
-      const accessToken = await getValidAccessToken(calendarAccount);
-
-      const event = {
-        subject: summary,
-        body: {
-          contentType: 'text',
-          content: description
-        },
-        start: {
-          dateTime: startDateTime,
-          timeZone: 'UTC'
-        },
-        end: {
-          dateTime: endDateTime,
-          timeZone: 'UTC'
-        }
-      };
-
-      const response = await axios.post(
-        'https://graph.microsoft.com/v1.0/me/events',
-        event,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        }
+  } catch (err) {
+    // delta link expired
+    if (err.response?.status === 410) {
+      await calendarAccount.updateOne(
+        { userId: Id, provider: 'microsoft' },
+        { $unset: { deltaLink: "" } }
       );
-
-      res.status(200).json({
-        message: 'Event created successfully',
-        eventId: response.data.id,
-        webLink: response.data.webLink
-      });
-    } catch (error) {
-      if (error.message === 'Failed to refresh Microsoft token') {
-        const { status, message } = handleTokenRefreshError(error, 'Microsoft');
-        return res.status(status).json({ error: message });
-      }
-      const { status, message } = handleMicrosoftError(error);
-      res.status(status).json({ error: message });
+      return res.status(410).send("Delta link expired, please reconnect.");
     }
-  },
-
-  disconnectMicrosoft: async (req, res) => {
-    try {
-      const calendarAccount = await CalendarAccount.findOne({
-        user: req.user._id,
-        provider: 'microsoft'
-      });
-
-      if (!calendarAccount) {
-        return res.status(404).json({ message: 'No connected Microsoft calendar found' });
-      }
-
-      calendarAccount.isConnected = false;
-      calendarAccount.accessToken = null;
-      calendarAccount.refreshToken = null;
-      calendarAccount.tokenExpiry = null;
-      calendarAccount.syncToken = null;
-      await calendarAccount.save();
-
-      res.json({ message: 'Microsoft calendar disconnected successfully' });
-    } catch (error) {
-      const { status, message } = handleMicrosoftError(error);
-      res.status(status).json({ error: message });
-    }
-  },
+    console.error("Microsoft sync failed:", err.message || err);
+    res.status(500).send("Microsoft sync failed.");
+  }
 };
-
-export default microsoftController;
