@@ -7,6 +7,7 @@ import calendarAccount from "../models/calendarAccountModel.js";
 import User from "../models/userModel.js";
 import Event from "../models/eventModel.js";
 import { refreshCalendarAccessToken } from "../utils/refreshToken.js";
+import cookieParser from "cookie-parser";
 
 const router = express.Router();
 
@@ -24,6 +25,17 @@ const userTokens = {}; // { userId: { google: { tokens, syncToken }, outlook: { 
 
 // ============ GOOGLE AUTH & SYNC ============
 export const connectGoogle = async (req, res) => {
+  // Assume user is authenticated and user ID is available in req.query or session
+  // For demo, use a hardcoded user ID or get from req.user if using auth
+  const userId = req.query.userId || req.user?._id || Id;
+  // Set a temporary secure cookie with the user ID
+  res.cookie("oauth_user_id", userId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 10 * 60 * 1000 // 10 minutes
+  });
+
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: [
@@ -39,6 +51,13 @@ export const connectGoogle = async (req, res) => {
 
 export const googleCallback = async (req, res) => {
   const { code } = req.query;
+  // Read and clear the temporary user ID cookie
+  const userId = req.cookies.oauth_user_id;
+  res.clearCookie("oauth_user_id");
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized - No user ID cookie provided" });
+  }
 
   try {
     const { tokens } = await oauth2Client.getToken(code);
@@ -56,7 +75,7 @@ export const googleCallback = async (req, res) => {
     const userEmail = userInfo.data.email;
 
     const existingAccount = await calendarAccount.findOne({
-      userId: Id,
+      userId: userId,
       email: userEmail,
     });
 
@@ -64,13 +83,8 @@ export const googleCallback = async (req, res) => {
       existingAccount.accessToken = tokens.access_token;
       existingAccount.refreshToken = tokens.refresh_token || existingAccount.refreshToken;
       existingAccount.expiresAt = new Date(tokens.expiry_date);
-
       await existingAccount.save();
-
-      return res.status(200).json({
-        message: "Existing calendar account updated successfully",
-        account: existingAccount,
-      });
+      return res.redirect('http://localhost:5173/dashboard');
     }
 
     const provider = 'google'; // or 'microsoft'
@@ -78,7 +92,7 @@ export const googleCallback = async (req, res) => {
     const refreshToken = tokens.refresh_token;
     
     const newCalendarAccount = new calendarAccount({
-      userId:Id,
+      userId: userId,
       email: userEmail,
       provider,
       accessToken,
@@ -89,15 +103,12 @@ export const googleCallback = async (req, res) => {
     await newCalendarAccount.save();
 
     await User.findByIdAndUpdate(
-      Id,
+      userId,
       { $push: { calendarAccounts: newCalendarAccount._id } },
       { new: true }
     );
+    return res.redirect('http://localhost:5173/dashboard');
 
-    return res.status(201).json({
-      message: "Calendar account linked successfully",
-      account: newCalendarAccount,
-    });
   } catch (err) {
     console.error('Error in googleCallback:', err.message || err);
     res.status(500).send('Google authentication failed');

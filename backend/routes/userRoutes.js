@@ -6,3 +6,5 @@ const router = express.Router();
 
 router.get('/events', protectRoute, getUserEventsHandler);
 router.get('/accounts', protectRoute, getCalendarAccountsHandler);
+
+export default router;

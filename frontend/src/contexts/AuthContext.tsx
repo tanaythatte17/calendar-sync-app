@@ -28,6 +28,8 @@ const api = axios.create({
   },
 });
 
+export { api };
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,8 +86,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email,
         password
       });
-
-      const { token, user } = response.data.data;
+      const { token, ...user } = response.data;
+      if (!token) throw new Error('No token in response');
       localStorage.setItem('token', token);
       setUser(user);
     } catch (error) {

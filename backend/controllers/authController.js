@@ -73,3 +73,12 @@ export const logout = (req,res) => {
         res.status(400).json({error:"Internal error in creating user"});
     }
 }
+
+// Returns the authenticated user's data
+export const getMe = (req, res) => {
+    if (!req.user) {
+        return res.status(404).json({ error: "User not found" });
+    }
+    const { _id, name, email } = req.user;
+    res.status(200).json({ data: { id: _id, name, email } });
+};

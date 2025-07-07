@@ -6,13 +6,17 @@ import googleRoutes from './routes/googleRoutes.js';
 import microsoftRoutes from './routes/microsoftRoutes.js';
 import authRoutes from './routes/authRoutes.js'
 import connectToDB from "./db/connectDB.js";
+import userRoutes from "./routes/userRoutes.js";
 
 dotenv.config();
 
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true
+}));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -20,7 +24,7 @@ app.use(cookieParser());
 app.use('/api/auth',authRoutes);
 app.use('/api/google', googleRoutes);
 app.use('/api/microsoft', microsoftRoutes);
-app.use('/api/suser', userRoutes);
+app.use('/api/user', userRoutes);
 
 const PORT = process.env.PORT || 5000;
 

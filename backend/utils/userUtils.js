@@ -1,5 +1,5 @@
-import calendarAccount from "../models/calendarAccount.js";
-import Event from "../models/Event.js";
+import calendarAccount from "../models/calendarAccountModel.js";
+import Event from "../models/eventModel.js";
 
 export const getAllCalendarAccounts = async (userId) => {
   return await calendarAccount.find({ userId });

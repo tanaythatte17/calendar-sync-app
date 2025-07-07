@@ -1,4 +1,4 @@
-import { getAllCalendarAccounts, getAllUserEvents } from "../utils/userUtils";
+import { getAllCalendarAccounts, getAllUserEvents } from "../utils/userUtils.js";
 
 export const getCalendarAccountsHandler = async (req, res) => {
   try {

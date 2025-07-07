@@ -13,6 +13,17 @@ const userTokens = {}; // { userId: { google: { tokens, syncToken }, outlook: { 
 
 // ============ MICROSOFT AUTH & SYNC ============
 export const connectMicrosoft = (req, res) => {
+  // Assume user is authenticated and user ID is available in req.query or session
+  // For demo, use a hardcoded user ID or get from req.user if using auth
+  const userId = req.query.userId || req.user?._id || '68668b8db45ebe41d4b854b4';
+  // Set a temporary secure cookie with the user ID
+  res.cookie("oauth_user_id", userId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 10 * 60 * 1000 // 10 minutes
+  });
+
   const params = qs.stringify({
     client_id: process.env.MICROSOFT_CLIENT_ID,
     response_type: 'code',
@@ -24,6 +35,14 @@ export const connectMicrosoft = (req, res) => {
 };
 
 export const microsoftCallback = async (req, res) => {
+  // Read and clear the temporary user ID cookie
+  const userId = req.cookies.oauth_user_id;
+  res.clearCookie("oauth_user_id");
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized - No user ID cookie provided" });
+  }
+
   try {
     const code = req.query.code;
   
@@ -40,17 +59,13 @@ export const microsoftCallback = async (req, res) => {
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
     const tokens = tokenRes.data;
-    console.log(tokens);
     // fetch user profile from Microsoft Graph
-    console.log('Access token is', tokens.access_token);
 
     const userRes = await axios.get('https://graph.microsoft.com/v1.0/me', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     console.log(userRes);
     const userEmail = userRes.data.mail || userRes.data.userPrincipalName;
-
-    const userId = '68668b8db45ebe41d4b854b4';
 
     const existingAccount = await calendarAccount.findOne({
       userId: userId,
@@ -62,11 +77,7 @@ export const microsoftCallback = async (req, res) => {
       existingAccount.refreshToken = tokens.refresh_token || existingAccount.refreshToken;
       existingAccount.expiresAt = new Date(Date.now() + tokens.expires_in * 1000); // if you track expiry
       await existingAccount.save();
-
-      return res.status(200).json({
-        message: "Existing calendar account updated successfully",
-        account: existingAccount
-      });
+      return res.redirect('http://localhost:5173/dashboard');
     }
 
     const provider = 'microsoft';
@@ -90,11 +101,8 @@ export const microsoftCallback = async (req, res) => {
       { $push: { calendarAccounts: newCalendarAccount._id } },
       { new: true }
     );
+    return res.redirect('http://localhost:5173/dashboard');
 
-    return res.status(201).json({
-      message: "Calendar account linked successfully",
-      account: newCalendarAccount,
-    });
   } catch (err) {
     console.error("Error in microsoftCallback:", err.message || err);
     res.status(500).send("Microsoft authentication failed");

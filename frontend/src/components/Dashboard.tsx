@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import axios from 'axios';
+import { api } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { FaGoogle, FaMicrosoft } from 'react-icons/fa';
+
+const API_URL = import.meta.env.VITE_API_URL;
 
 interface CalendarAccount {
   id: string;
@@ -80,8 +82,8 @@ const Dashboard: React.FC = () => {
     const fetchData = async () => {
       try {
         const [accountsRes, eventsRes] = await Promise.all([
-          axios.get('/api/calendar-accounts'),
-          axios.get('/api/events')
+          api.get(`${API_URL}/user/accounts`),
+          api.get(`${API_URL}/user/events`)
         ]);
         setAccounts(accountsRes.data);
         setEvents(eventsRes.data);
@@ -97,8 +99,7 @@ const Dashboard: React.FC = () => {
 
   const handleConnectGoogle = async () => {
     try {
-      const response = await axios.get('/api/auth/google/redirect');
-      window.location.href = response.data.url;
+      window.location.href = `${API_URL}/google/auth`;
     } catch (err) {
       setError('Failed to connect Google Calendar');
     }
@@ -106,8 +107,7 @@ const Dashboard: React.FC = () => {
 
   const handleConnectMicrosoft = async () => {
     try {
-      const response = await axios.get('/api/auth/microsoft/redirect');
-      window.location.href = response.data.url;
+      window.location.href = `${API_URL}/microsoft/auth`;
     } catch (err) {
       setError('Failed to connect Microsoft Calendar');
     }
@@ -153,7 +153,7 @@ const Dashboard: React.FC = () => {
         calendarAccountId: newEvent.calendarAccountId,
         attendees: newEvent.attendees.map(email => ({ email, name: email }))
       };
-      const response = await axios.post('/api/events', eventData);
+      const response = await api.post(`${API_URL}/user/events`, eventData);
       setEvents([...events, response.data]);
       setIsAddEventModalOpen(false);
       setNewEvent({
@@ -387,7 +387,7 @@ const Dashboard: React.FC = () => {
                 <>
                   {getEventsForDate(selectedDate).map((event) => (
                     <div
-                      key={event._id}
+                      key={event._id || event.externalId}
                       className="p-4 sm:p-6 border border-blue-100 rounded-xl hover:bg-blue-50 transition-all duration-200 shadow-sm hover:shadow-md"
                     >
                       <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-4 gap-2">
@@ -428,8 +428,8 @@ const Dashboard: React.FC = () => {
                         <div className="mb-4">
                           <p className="text-sm font-medium text-gray-700 mb-2">Attendees:</p>
                           <div className="flex flex-wrap gap-2">
-                            {event.attendees.map((attendee, index) => (
-                              <span key={index} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
+                            {event.attendees.map((attendee) => (
+                              <span key={attendee.email || attendee.name} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
                                 {attendee.name || attendee.email}
                               </span>
                             ))}
@@ -594,8 +594,8 @@ const Dashboard: React.FC = () => {
                   
                   {newEvent.attendees.length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {newEvent.attendees.map((email, index) => (
-                        <span key={index} className="flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                      {newEvent.attendees.map((email) => (
+                        <span key={email} className="flex items-center bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
                           {email}
                           <button
                             type="button"
