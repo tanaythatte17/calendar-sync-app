@@ -5,6 +5,10 @@ import dotenv from "dotenv";
 import calendarAccount from "../models/calendarAccountModel.js";
 import User from "../models/userModel.js";
 import Event from "../models/eventModel.js";
+import jwt from "jsonwebtoken";
+import { refreshCalendarAccessToken } from "../utils/refreshToken.js";
+import moment from "moment-timezone";
+import { findIana } from "windows-iana";
 
 dotenv.config();
 
@@ -13,31 +17,45 @@ const userTokens = {}; // { userId: { google: { tokens, syncToken }, outlook: { 
 
 // ============ MICROSOFT AUTH & SYNC ============
 export const connectMicrosoft = (req, res) => {
-  // Assume user is authenticated and user ID is available in req.query or session
-  // For demo, use a hardcoded user ID or get from req.user if using auth
-  const userId = req.query.userId || req.user?._id || '68668b8db45ebe41d4b854b4';
-  // Set a temporary secure cookie with the user ID
-  res.cookie("oauth_user_id", userId, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 10 * 60 * 1000 // 10 minutes
-  });
-
+  const state = req.query.state;
+  const userId = state ? null : (req.query.userId || req.user?._id || '68668b8db45ebe41d4b854b4');
+  // Set a temporary secure cookie with the user ID if not using state
+  if (!state) {
+    res.cookie("oauth_user_id", userId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 10 * 60 * 1000 // 10 minutes
+    });
+  }
   const params = qs.stringify({
     client_id: process.env.MICROSOFT_CLIENT_ID,
     response_type: 'code',
     redirect_uri: process.env.MICROSOFT_REDIRECT_URI,
     response_mode: 'query',
     scope: 'openid profile email offline_access User.Read Calendars.Read Calendars.ReadWrite',
+    state: state || undefined
   });
   res.redirect(`https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`);
 };
 
 export const microsoftCallback = async (req, res) => {
-  // Read and clear the temporary user ID cookie
-  const userId = req.cookies.oauth_user_id;
-  res.clearCookie("oauth_user_id");
+  const { code, state } = req.query;
+  let userId;
+  if (state) {
+    try {
+      const decoded = jwt.verify(state, process.env.JWT_SECRET);
+      userId = decoded.userId || decoded.id;
+    } catch (err) {
+      return res.status(401).json({ error: "Invalid token in state" });
+    }
+  } else {
+    userId = req.cookies.oauth_user_id;
+    res.clearCookie("oauth_user_id");
+  }
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized - No user ID provided" });
+  }
 
   if (!userId) {
     return res.status(401).json({ error: "Unauthorized - No user ID cookie provided" });
@@ -64,7 +82,6 @@ export const microsoftCallback = async (req, res) => {
     const userRes = await axios.get('https://graph.microsoft.com/v1.0/me', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
-    console.log(userRes);
     const userEmail = userRes.data.mail || userRes.data.userPrincipalName;
 
     const existingAccount = await calendarAccount.findOne({
@@ -77,28 +94,33 @@ export const microsoftCallback = async (req, res) => {
       existingAccount.refreshToken = tokens.refresh_token || existingAccount.refreshToken;
       existingAccount.expiresAt = new Date(Date.now() + tokens.expires_in * 1000); // if you track expiry
       await existingAccount.save();
+      // Do not return here; update user's calendarAccounts below if needed
+    } else {
+      const provider = 'microsoft';
+      const accessToken = tokens.access_token;
+      const refreshToken = tokens.refresh_token;
+
+      const newCalendarAccount = new calendarAccount({
+        userId: userId,
+        email: userEmail,
+        provider,
+        accessToken,
+        refreshToken,
+        deltaLink: null,
+        expiresAt: new Date(Date.now() + tokens.expires_in * 1000), // initialize delta link
+      });
+      await newCalendarAccount.save();
+      await User.findByIdAndUpdate(
+        userId,
+        { $push: { calendarAccounts: newCalendarAccount._id } },
+        { new: true }
+      );
       return res.redirect('http://localhost:5173/dashboard');
     }
-
-    const provider = 'microsoft';
-    const accessToken = tokens.access_token;
-    const refreshToken = tokens.refresh_token;
-
-    const newCalendarAccount = new calendarAccount({
-      userId: userId,
-      email: userEmail,
-      provider,
-      accessToken,
-      refreshToken,
-      deltaLink: null,
-      expiresAt: new Date(Date.now() + tokens.expires_in * 1000), // initialize delta link
-    });
-
-    await newCalendarAccount.save();
-
+    // Always ensure the account is in the user's calendarAccounts array
     await User.findByIdAndUpdate(
       userId,
-      { $push: { calendarAccounts: newCalendarAccount._id } },
+      { $addToSet: { calendarAccounts: existingAccount._id } },
       { new: true }
     );
     return res.redirect('http://localhost:5173/dashboard');
@@ -111,8 +133,14 @@ export const microsoftCallback = async (req, res) => {
 
 export const syncMicrosoft = async (req, res) => {
   try {
-    const userId = '68668b8db45ebe41d4b854b4'; // ideally from req.user._id
-    const userEmail = 'tanaythatte17@gmail.com'; // adjust this as needed
+    // Get userId from req.user (set by protectRoute middleware)
+    const userId = req.user?._id;
+    // Get email from query or req.user (if needed)
+    const userEmail = req.query.email || req.user?.email;
+
+    if (!userId || !userEmail) {
+      return res.status(400).json({ error: "Missing userId or email in request." });
+    }
 
     const account = await calendarAccount.findOne({
       userId: userId,
@@ -127,24 +155,21 @@ export const syncMicrosoft = async (req, res) => {
     if (account.expiresAt && account.expiresAt < new Date()) {
       console.log("Microsoft token expired, refreshing...");
 
-      const tokens = await refreshCalendarAccessToken({
-        accountId: account._id,
-        provider: 'microsoft',
-        refreshToken: account.refreshToken,
-        tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
-        clientId: process.env.MICROSOFT_CLIENT_ID,
-        clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
-      });
+      const tokens = await refreshCalendarAccessToken(
+        account._id,
+        account.refreshToken,
+        'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        process.env.MICROSOFT_CLIENT_ID,
+        process.env.MICROSOFT_CLIENT_SECRET
+      );
 
       account.accessToken = tokens.accessToken; // keep local variable updated
     }
-
     const headers = { Authorization: `Bearer ${account.accessToken}` };
     const deltaUrl = account.deltaLink || 'https://graph.microsoft.com/v1.0/me/events';
-
     const response = await axios.get(deltaUrl, { headers });
     const events = response.data.value;
-
+    console.log(events);
     // store the new delta link
     const newDeltaLink = response.data['@odata.deltaLink'] || account.deltaLink;
     account.deltaLink = newDeltaLink;
@@ -154,6 +179,7 @@ export const syncMicrosoft = async (req, res) => {
     for (const e of events) {
       if (e["@removed"]) {
         // event was deleted
+        console.log('Deleting event:', e.id);
         await Event.deleteOne({
           calendarAccountId: account._id,
           externalId: e.id,
@@ -176,14 +202,43 @@ export const syncMicrosoft = async (req, res) => {
           title: e.subject,
           description: e.bodyPreview,
           location: e.location?.displayName,
-          start: {
-            dateTime: e.start?.dateTime,
-            timeZone: e.start?.timeZone,
-          },
-          end: {
-            dateTime: e.end?.dateTime,
-            timeZone: e.end?.timeZone,
-          },
+          start: (() => {
+            const winTZ = e.originalStartTimeZone || e.start?.timeZone;
+            let ianaTZ = 'UTC';
+            try {
+              const iana = findIana(winTZ);
+              if (iana && iana.length > 0) ianaTZ = iana[0].value;
+            } catch (err) {}
+            // Fallback for India Standard Time
+            if ((!ianaTZ || ianaTZ === 'UTC') && winTZ === 'India Standard Time') {
+              ianaTZ = 'Asia/Kolkata';
+            }
+            const localString = typeof e.start?.dateTime === 'string' ? e.start.dateTime : new Date(e.start?.dateTime).toISOString();
+            const utcMoment = moment.tz(localString, ianaTZ).utc();
+            return {
+              dateTime: utcMoment.toDate(),
+              timeZone: winTZ, // Store the original Windows timezone string
+              ianaTimeZone: ianaTZ, // Store the mapped IANA timezone
+            };
+          })(),
+          end: (() => {
+            const winTZ = e.originalEndTimeZone || e.end?.timeZone;
+            let ianaTZ = 'UTC';
+            try {
+              const iana = findIana(winTZ);
+              if (iana && iana.length > 0) ianaTZ = iana[0].value;
+            } catch (err) {}
+            if ((!ianaTZ || ianaTZ === 'UTC') && winTZ === 'India Standard Time') {
+              ianaTZ = 'Asia/Kolkata';
+            }
+            const localString = typeof e.end?.dateTime === 'string' ? e.end.dateTime : new Date(e.end?.dateTime).toISOString();
+            const utcMoment = moment.tz(localString, ianaTZ).utc();
+            return {
+              dateTime: utcMoment.toDate(),
+              timeZone: winTZ, // Store the original Windows timezone string
+              ianaTimeZone: ianaTZ, // Store the mapped IANA timezone
+            };
+          })(),
           organizer: {
             email: e.organizer?.emailAddress?.address,
             name: e.organizer?.emailAddress?.name,
@@ -195,7 +250,7 @@ export const syncMicrosoft = async (req, res) => {
           })),
           isRecurring: e.type === 'seriesMaster',
           recurringEventId: e.seriesMasterId,
-          status: e.showAs || 'busy',
+          status: e.isCancelled ? 'cancelled' : (e.showAs === 'tentative' ? 'tentative' : 'confirmed'),
           htmlLink: e.webLink,
           raw: e,
           updatedAt: new Date()
@@ -213,7 +268,7 @@ export const syncMicrosoft = async (req, res) => {
     // delta link expired
     if (err.response?.status === 410) {
       await calendarAccount.updateOne(
-        { userId: Id, provider: 'microsoft' },
+        { userId: userId, provider: 'microsoft' }, // Fix: use userId instead of Id
         { $unset: { deltaLink: "" } }
       );
       return res.status(410).send("Delta link expired, please reconnect.");

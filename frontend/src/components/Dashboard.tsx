@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { FaGoogle, FaMicrosoft } from 'react-icons/fa';
+import { toZonedTime, format } from 'date-fns-tz';
+import moment from 'moment-timezone';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -26,10 +28,12 @@ interface Event {
   start: {
     dateTime: string;
     timeZone: string;
+    ianaTimeZone?: string; // Added for Microsoft
   };
   end: {
     dateTime: string;
     timeZone: string;
+    ianaTimeZone?: string; // Added for Microsoft
   };
   organizer?: {
     email: string;
@@ -57,8 +61,43 @@ interface NewEvent {
   attendees: string[];
 }
 
+// Replace the timezone dropdown with a simple list of UTC offsets
+const userTimeZones = [
+  { label: 'UTC-12:00', value: 'Etc/GMT+12' },
+  { label: 'UTC-11:00', value: 'Etc/GMT+11' },
+  { label: 'UTC-10:00', value: 'Etc/GMT+10' },
+  { label: 'UTC-09:00', value: 'Etc/GMT+9' },
+  { label: 'UTC-08:00', value: 'Etc/GMT+8' },
+  { label: 'UTC-07:00', value: 'Etc/GMT+7' },
+  { label: 'UTC-06:00', value: 'Etc/GMT+6' },
+  { label: 'UTC-05:00', value: 'Etc/GMT+5' },
+  { label: 'UTC-04:00', value: 'Etc/GMT+4' },
+  { label: 'UTC-03:00', value: 'Etc/GMT+3' },
+  { label: 'UTC-02:00', value: 'Etc/GMT+2' },
+  { label: 'UTC-01:00', value: 'Etc/GMT+1' },
+  { label: 'UTC', value: 'Etc/UTC' },
+  { label: 'UTC+01:00', value: 'Etc/GMT-1' },
+  { label: 'UTC+02:00', value: 'Etc/GMT-2' },
+  { label: 'UTC+03:00', value: 'Etc/GMT-3' },
+  { label: 'UTC+03:30', value: 'Asia/Tehran' },
+  { label: 'UTC+04:00', value: 'Etc/GMT-4' },
+  { label: 'UTC+04:30', value: 'Asia/Kabul' },
+  { label: 'UTC+05:00', value: 'Etc/GMT-5' },
+  { label: 'UTC+05:30', value: 'Asia/Kolkata' },
+  { label: 'UTC+05:45', value: 'Asia/Kathmandu' },
+  { label: 'UTC+06:00', value: 'Etc/GMT-6' },
+  { label: 'UTC+06:30', value: 'Asia/Yangon' },
+  { label: 'UTC+07:00', value: 'Etc/GMT-7' },
+  { label: 'UTC+08:00', value: 'Etc/GMT-8' },
+  { label: 'UTC+09:00', value: 'Etc/GMT-9' },
+  { label: 'UTC+09:30', value: 'Australia/Adelaide' },
+  { label: 'UTC+10:00', value: 'Etc/GMT-10' },
+  { label: 'UTC+11:00', value: 'Etc/GMT-11' },
+  { label: 'UTC+12:00', value: 'Etc/GMT-12' },
+];
+
 const Dashboard: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUserTimezone } = useAuth();
   const navigate = useNavigate();
   const [accounts, setAccounts] = useState<CalendarAccount[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
@@ -77,29 +116,49 @@ const Dashboard: React.FC = () => {
     attendees: []
   });
   const [attendeeEmail, setAttendeeEmail] = useState('');
+  const [selectedUserTimeZone, setSelectedUserTimeZone] = useState(user?.timezone || 'UTC');
+  const [tzSaveStatus, setTzSaveStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [accountsRes, eventsRes] = await Promise.all([
-          api.get(`${API_URL}/user/accounts`),
-          api.get(`${API_URL}/user/events`)
-        ]);
-        setAccounts(accountsRes.data);
-        setEvents(eventsRes.data);
-      } catch (err) {
-        setError('Failed to load calendar data');
-        console.error('Error fetching data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    setSelectedUserTimeZone(user?.timezone || 'UTC');
+  }, [user?.timezone]);
+
+  const handleTimezoneSave = async () => {
+    const success = await updateUserTimezone(selectedUserTimeZone);
+    setTzSaveStatus(success ? 'Saved!' : 'Failed to save');
+    setTimeout(() => setTzSaveStatus(null), 2000);
+  };
+
+  // Move fetchData outside useEffect
+  const fetchData = async () => {
+    try {
+      const [accountsRes, eventsRes] = await Promise.all([
+        api.get(`${API_URL}/user/accounts`),
+        api.get(`${API_URL}/user/events`)
+      ]);
+      setAccounts(accountsRes.data);
+      setEvents(eventsRes.data);
+      console.log('Fetched events:', eventsRes.data);
+    } catch (err) {
+      setError('Failed to load calendar data');
+      console.error('Error fetching data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, []);
 
   const handleConnectGoogle = async () => {
     try {
-      window.location.href = `${API_URL}/google/auth`;
+      const jwt = localStorage.getItem('token');
+      if (!jwt) {
+        setError('No authentication token found. Please log in again.');
+        return;
+      }
+      window.location.href = `/api/google/auth?state=${encodeURIComponent(jwt)}`;
     } catch (err) {
       setError('Failed to connect Google Calendar');
     }
@@ -107,7 +166,12 @@ const Dashboard: React.FC = () => {
 
   const handleConnectMicrosoft = async () => {
     try {
-      window.location.href = `${API_URL}/microsoft/auth`;
+      const jwt = localStorage.getItem('token');
+      if (!jwt) {
+        setError('No authentication token found. Please log in again.');
+        return;
+      }
+      window.location.href = `/api/microsoft/auth?state=${encodeURIComponent(jwt)}`;
     } catch (err) {
       setError('Failed to connect Microsoft Calendar');
     }
@@ -124,8 +188,16 @@ const Dashboard: React.FC = () => {
 
   const getEventsForDate = (date: Date) => {
     return events.filter(event => {
-      const eventDate = new Date(event.start.dateTime);
-      return eventDate.toDateString() === date.toDateString();
+      let eventDate;
+      const ianaTZ = user?.timezone || 'UTC';
+      eventDate = toZonedTime(new Date(event.start.dateTime), ianaTZ);
+      const match = eventDate.toDateString() === date.toDateString();
+      console.log('Checking event:', event.title, {
+        eventDate: eventDate.toString(),
+        selectedDate: date.toString(),
+        match
+      });
+      return match;
     });
   };
 
@@ -144,11 +216,11 @@ const Dashboard: React.FC = () => {
         location: newEvent.location,
         start: {
           dateTime: newEvent.startDateTime,
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          timeZone: 'UTC' // Default to UTC for new events
         },
         end: {
           dateTime: newEvent.endDateTime,
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          timeZone: 'UTC' // Default to UTC for new events
         },
         calendarAccountId: newEvent.calendarAccountId,
         attendees: newEvent.attendees.map(email => ({ email, name: email }))
@@ -210,6 +282,29 @@ const Dashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
+          <div className="flex items-center gap-2">
+            <label htmlFor="user-timezone-select" className="text-sm font-medium text-gray-700">Timezone:</label>
+            <select
+              id="user-timezone-select"
+              value={selectedUserTimeZone}
+              onChange={e => setSelectedUserTimeZone(e.target.value)}
+              className="bg-white text-gray-900 rounded-lg border border-gray-300 px-3 py-2 text-sm shadow focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-200"
+            >
+              {userTimeZones.map(tz => (
+                <option key={tz.value} value={tz.value}>{tz.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleTimezoneSave}
+              className="ml-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-xs font-semibold"
+            >
+              Save
+            </button>
+            {tzSaveStatus && <span className="ml-2 text-xs text-green-600">{tzSaveStatus}</span>}
+          </div>
+        </div>
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl shadow-sm">
             <p className="text-red-600 flex items-center">
@@ -306,6 +401,31 @@ const Dashboard: React.FC = () => {
                         {account.provider}
                       </p>
                     </div>
+                    <button
+                      className="ml-auto px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all text-xs font-semibold flex items-center gap-1"
+                      onClick={async () => {
+                        setLoading(true);
+                        setError('');
+                        try {
+                          const syncUrl = `${API_URL}/${account.provider}/sync/${account.provider}?email=${encodeURIComponent(account.email)}`;
+                          await api.get(syncUrl);
+                          setError('');
+                          alert(`${account.provider.charAt(0).toUpperCase() + account.provider.slice(1)} calendar synced!`);
+                          await fetchData(); // Refresh events and accounts after sync
+                        } catch (err) {
+                          setError(`Failed to sync ${account.provider} calendar`);
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      disabled={loading}
+                      title={`Sync ${account.provider} calendar`}
+                    >
+                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582M20 20v-5h-.581M5 9A7 7 0 0119 15.197M19 15A7 7 0 015 8.803" />
+                      </svg>
+                      Sync
+                    </button>
                   </div>
                 </div>
               ))}
@@ -385,9 +505,9 @@ const Dashboard: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  {getEventsForDate(selectedDate).map((event) => (
+                  {(() => { const filtered = getEventsForDate(selectedDate); console.log('Events for selected date:', filtered); return filtered; })().map((event, idx) => (
                     <div
-                      key={event._id || event.externalId}
+                      key={event._id ? event._id : event.externalId ? event.externalId : idx}
                       className="p-4 sm:p-6 border border-blue-100 rounded-xl hover:bg-blue-50 transition-all duration-200 shadow-sm hover:shadow-md"
                     >
                       <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-4 gap-2">
@@ -398,7 +518,16 @@ const Dashboard: React.FC = () => {
                               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
-                              {new Date(event.start.dateTime).toLocaleTimeString()} - {new Date(event.end.dateTime).toLocaleTimeString()}
+                              {(() => {
+                                const ianaTZ = user?.timezone || 'UTC';
+                                const startZoned = toZonedTime(new Date(event.start.dateTime), ianaTZ);
+                                const endZoned = toZonedTime(new Date(event.end.dateTime), ianaTZ);
+                                const tzAbbr = startZoned
+                                  .toLocaleTimeString('en-us', { timeZone: ianaTZ, timeZoneName: 'short' })
+                                  .split(' ')
+                                  .pop();
+                                return `${format(startZoned, 'HH:mm')} - ${format(endZoned, 'HH:mm')} ${tzAbbr}`;
+                              })()}
                             </span>
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEventStatusColor(event.status)}`}>
                               {event.status}

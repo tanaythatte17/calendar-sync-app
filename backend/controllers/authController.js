@@ -25,11 +25,12 @@ export const signup = async (req,res) => {
         });
         await newUser.save();
         if(newUser){
-            generateTokenAndSetCookie(newUser._id,res);
+            const token = generateTokenAndSetCookie(newUser._id, res);
             return res.status(201).json({
-                id : newUser._id,
-                name : newUser.name,
-                email : newUser.email,
+                id: newUser._id,
+                name: newUser.name,
+                email: newUser.email,
+                token // return token for localStorage
             });
         }
         else{
@@ -52,12 +53,12 @@ export const login = async (req,res) => {
         if(!isPasswordCorrect){
             return res.status(400).json({error:"Incorrect Password"});
         }
-        const token = generateTokenAndSetCookie(user._id,res);
+        const token = generateTokenAndSetCookie(user._id, res);
         return res.status(200).json({
-            id:user._id,
-            name:user.name,
-            email:user.email,
-            token
+            id: user._id,
+            name: user.name,
+            email: user.email,
+            token // return token for localStorage
         });
     } catch (error) {
         console.log(error.message);

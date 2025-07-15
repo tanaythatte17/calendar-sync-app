@@ -7,11 +7,10 @@ import calendarAccount from "../models/calendarAccountModel.js";
 import User from "../models/userModel.js";
 import Event from "../models/eventModel.js";
 import { refreshCalendarAccessToken } from "../utils/refreshToken.js";
+import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 
 const router = express.Router();
-
-const Id = '68668b8db45ebe41d4b854b4';//mock for development
 
 // Setup Google OAuth2 client
 dotenv.config();
@@ -25,17 +24,17 @@ const userTokens = {}; // { userId: { google: { tokens, syncToken }, outlook: { 
 
 // ============ GOOGLE AUTH & SYNC ============
 export const connectGoogle = async (req, res) => {
-  // Assume user is authenticated and user ID is available in req.query or session
-  // For demo, use a hardcoded user ID or get from req.user if using auth
-  const userId = req.query.userId || req.user?._id || Id;
-  // Set a temporary secure cookie with the user ID
-  res.cookie("oauth_user_id", userId, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 10 * 60 * 1000 // 10 minutes
-  });
-
+  const state = req.query.state;
+  const userId = state ? null : (req.query.userId || req.user?._id ); // fallback for non-state flows
+  // Set a temporary secure cookie with the user ID if not using state
+  if (!state) {
+    res.cookie("oauth_user_id", userId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 10 * 60 * 1000 // 10 minutes
+    });
+  }
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: [
@@ -44,19 +43,30 @@ export const connectGoogle = async (req, res) => {
     ],
     prompt: 'consent',
     redirect_uri: process.env.GOOGLE_REDIRECT_URI, // Explicitly required
+    state: state || undefined
   });
-
   res.redirect(url);
 };
 
 export const googleCallback = async (req, res) => {
-  const { code } = req.query;
-  // Read and clear the temporary user ID cookie
-  const userId = req.cookies.oauth_user_id;
-  res.clearCookie("oauth_user_id");
-
+  const { code, state } = req.query;
+  let userId;
+  if (state) {
+    // JWT in state param
+    try {
+      const decodedState = decodeURIComponent(state);
+      const decoded = jwt.verify(decodedState, process.env.JWT_SECRET);
+      userId = decoded.userId || decoded.id;
+    } catch (err) {
+      return res.status(401).json({ error: "Invalid token in state" });
+    }
+  } else {
+    // fallback to cookie
+    userId = req.cookies.oauth_user_id;
+    res.clearCookie("oauth_user_id");
+  }
   if (!userId) {
-    return res.status(401).json({ error: "Unauthorized - No user ID cookie provided" });
+    return res.status(401).json({ error: "Unauthorized - No user ID provided" });
   }
 
   try {
@@ -78,33 +88,36 @@ export const googleCallback = async (req, res) => {
       userId: userId,
       email: userEmail,
     });
-
     if (existingAccount) {
       existingAccount.accessToken = tokens.access_token;
       existingAccount.refreshToken = tokens.refresh_token || existingAccount.refreshToken;
       existingAccount.expiresAt = new Date(tokens.expiry_date);
       await existingAccount.save();
+      // Do not return here; update user's calendarAccounts below if needed
+    } else {
+      const provider = 'google'; // or 'microsoft'
+      const accessToken = tokens.access_token;
+      const refreshToken = tokens.refresh_token;
+      const newCalendarAccount = new calendarAccount({
+        userId: userId,
+        email: userEmail,
+        provider,
+        accessToken,
+        refreshToken,
+        expiresAt: new Date(tokens.expiry_date),
+      });
+      await newCalendarAccount.save();
+      await User.findByIdAndUpdate(
+        userId,
+        { $push: { calendarAccounts: newCalendarAccount._id } },
+        { new: true }
+      );
       return res.redirect('http://localhost:5173/dashboard');
     }
-
-    const provider = 'google'; // or 'microsoft'
-    const accessToken = tokens.access_token;
-    const refreshToken = tokens.refresh_token;
-    
-    const newCalendarAccount = new calendarAccount({
-      userId: userId,
-      email: userEmail,
-      provider,
-      accessToken,
-      refreshToken,
-      expiresAt: new Date(tokens.expiry_date),
-    });
-
-    await newCalendarAccount.save();
-
+    // Always ensure the account is in the user's calendarAccounts array
     await User.findByIdAndUpdate(
       userId,
-      { $push: { calendarAccounts: newCalendarAccount._id } },
+      { $addToSet: { calendarAccounts: existingAccount._id } },
       { new: true }
     );
     return res.redirect('http://localhost:5173/dashboard');
@@ -117,8 +130,14 @@ export const googleCallback = async (req, res) => {
 
 export const syncGoogle = async (req, res) => {
   try {
-    const userId = Id; // assuming you use auth middleware
-    const userEmail = 'tanaythatte17@gmail.com';
+    // Get userId from req.user (set by protectRoute middleware)
+    const userId = req.user?._id;
+    // Get email from query or req.user (if needed)
+    const userEmail = req.query.email || req.user?.email;
+
+    if (!userId || !userEmail) {
+      return res.status(400).json({ error: "Missing userId or email in request." });
+    }
 
     const account = await calendarAccount.findOne({
       userId: userId,
@@ -131,16 +150,14 @@ export const syncGoogle = async (req, res) => {
     }
 
     if (account.expiresAt && account.expiresAt < new Date()) {
-      console.log("Google token expired, refreshing...");
 
-      const tokens = await refreshCalendarAccessToken({
-        accountId: account._id,
-        provider: 'google',
-        refreshToken: account.refreshToken,
-        tokenUrl: 'https://oauth2.googleapis.com/token',
-        clientId: process.env.GOOGLE_CLIENT_ID,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      });
+      const tokens = await refreshCalendarAccessToken(
+        account._id,
+        account.refreshToken,
+        'https://oauth2.googleapis.com/token',
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET
+      );
 
       account.accessToken = tokens.accessToken; // keep local variable updated
     }
@@ -200,12 +217,12 @@ export const syncGoogle = async (req, res) => {
           description: e.description,
           location: e.location,
           start: {
-            dateTime: e.start?.dateTime || e.start?.date,
-            timeZone: e.start?.timeZone
+            dateTime: new Date(e.start?.dateTime || e.start?.date),
+            timeZone: e.start?.timeZone || 'UTC'
           },
           end: {
-            dateTime: e.end?.dateTime || e.end?.date,
-            timeZone: e.end?.timeZone
+            dateTime: new Date(e.end?.dateTime || e.end?.date),
+            timeZone: e.end?.timeZone || 'UTC'
           },
           organizer: {
             email: e.organizer?.email,
