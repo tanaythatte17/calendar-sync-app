@@ -52,3 +52,13 @@ export const updateUserTimezone = async (req, res) => {
     res.status(500).json({ error: 'Failed to update timezone' });
   }
 };
+
+export const getUserTimezone = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('timezone');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ timezone: user.timezone });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch user timezone' });
+  }
+};

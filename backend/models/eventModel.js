@@ -28,6 +28,7 @@ const EventSchema = new mongoose.Schema({
     dateTime: { type: Date, required: true },
     timeZone: { type: String }
   },
+  isAllDay: { type: Boolean, default: false },
 
   organizer: {
     email: { type: String },

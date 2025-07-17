@@ -47,6 +47,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const response = await api.get('/auth/me');
       setUser(response.data.data);
+      // Fetch full profile (including timezone) after auth check
+      await fetchUserProfile();
     } catch (error) {
       console.error('Auth check failed:', error);
       setUser(null);

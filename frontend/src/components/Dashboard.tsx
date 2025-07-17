@@ -29,11 +29,13 @@ interface Event {
     dateTime: string;
     timeZone: string;
     ianaTimeZone?: string; // Added for Microsoft
+    isAllDay?: boolean; // Added for Microsoft
   };
   end: {
     dateTime: string;
     timeZone: string;
     ianaTimeZone?: string; // Added for Microsoft
+    isAllDay?: boolean; // Added for Microsoft
   };
   organizer?: {
     email: string;
@@ -49,6 +51,7 @@ interface Event {
   status: 'confirmed' | 'cancelled' | 'tentative';
   htmlLink?: string;
   updatedAt: string;
+  isAllDay?: boolean;
 }
 
 interface NewEvent {
@@ -120,7 +123,9 @@ const Dashboard: React.FC = () => {
   const [tzSaveStatus, setTzSaveStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelectedUserTimeZone(user?.timezone || 'UTC');
+    // Only set if the timezone exists in the dropdown
+    const found = userTimeZones.find(tz => tz.value === user?.timezone);
+    setSelectedUserTimeZone(found ? found.value : 'UTC');
   }, [user?.timezone]);
 
   const handleTimezoneSave = async () => {
@@ -518,7 +523,7 @@ const Dashboard: React.FC = () => {
                               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
-                              {(() => {
+                              {event.isAllDay ? 'All day' : (() => {
                                 const ianaTZ = user?.timezone || 'UTC';
                                 const startZoned = toZonedTime(new Date(event.start.dateTime), ianaTZ);
                                 const endZoned = toZonedTime(new Date(event.end.dateTime), ianaTZ);

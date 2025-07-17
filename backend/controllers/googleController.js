@@ -87,15 +87,17 @@ export const googleCallback = async (req, res) => {
     const existingAccount = await calendarAccount.findOne({
       userId: userId,
       email: userEmail,
+      provider: 'google',
     });
     if (existingAccount) {
       existingAccount.accessToken = tokens.access_token;
       existingAccount.refreshToken = tokens.refresh_token || existingAccount.refreshToken;
       existingAccount.expiresAt = new Date(tokens.expiry_date);
+      existingAccount.syncToken = null;
       await existingAccount.save();
       // Do not return here; update user's calendarAccounts below if needed
     } else {
-      const provider = 'google'; // or 'microsoft'
+      const provider = 'google';
       const accessToken = tokens.access_token;
       const refreshToken = tokens.refresh_token;
       const newCalendarAccount = new calendarAccount({
@@ -150,7 +152,6 @@ export const syncGoogle = async (req, res) => {
     }
 
     if (account.expiresAt && account.expiresAt < new Date()) {
-
       const tokens = await refreshCalendarAccessToken(
         account._id,
         account.refreshToken,
@@ -158,7 +159,6 @@ export const syncGoogle = async (req, res) => {
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET
       );
-
       account.accessToken = tokens.accessToken; // keep local variable updated
     }
 
@@ -188,10 +188,17 @@ export const syncGoogle = async (req, res) => {
       params.timeMax = twoYearsAhead.toISOString();
     }
 
-    const result = await calendar.events.list(params);
-    const events = result.data.items;
+    let allEvents = [];
+    let pageToken = undefined;
+    do {
+      if (pageToken) params.pageToken = pageToken;
+      const result = await calendar.events.list(params);
+      const events = result.data.items;
+      allEvents = allEvents.concat(events);
+      pageToken = result.data.nextPageToken;
+    } while (pageToken);
 
-    for (const e of events) {
+    for (const e of allEvents) {
       // handle deleted/cancelled events
       if (e.status === 'cancelled') {
         await Event.deleteOne({
@@ -201,7 +208,6 @@ export const syncGoogle = async (req, res) => {
         });
         continue;
       }
-
       // otherwise add or update
       await Event.findOneAndUpdate(
         {
@@ -224,6 +230,7 @@ export const syncGoogle = async (req, res) => {
             dateTime: new Date(e.end?.dateTime || e.end?.date),
             timeZone: e.end?.timeZone || 'UTC'
           },
+          isAllDay: Boolean(e.start?.date && !e.start?.dateTime),
           organizer: {
             email: e.organizer?.email,
             name: e.organizer?.displayName
@@ -245,13 +252,15 @@ export const syncGoogle = async (req, res) => {
     }
 
     // save sync token
-    account.syncToken = result.data.nextSyncToken;
+    // Use the last result's nextSyncToken (from the last page)
+    const lastResult = await calendar.events.list(params);
+    account.syncToken = lastResult.data.nextSyncToken;
     account.lastSyncedAt = new Date();
     await account.save();
 
     res.json({
       message: "Google calendar sync complete",
-      synced: events.length
+      synced: allEvents.length
     });
 
   } catch (err) {

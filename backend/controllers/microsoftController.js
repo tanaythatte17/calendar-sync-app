@@ -93,6 +93,7 @@ export const microsoftCallback = async (req, res) => {
       existingAccount.accessToken = tokens.access_token;
       existingAccount.refreshToken = tokens.refresh_token || existingAccount.refreshToken;
       existingAccount.expiresAt = new Date(Date.now() + tokens.expires_in * 1000); // if you track expiry
+      existingAccount.deltaLink = null;
       await existingAccount.save();
       // Do not return here; update user's calendarAccounts below if needed
     } else {
@@ -154,7 +155,6 @@ export const syncMicrosoft = async (req, res) => {
 
     if (account.expiresAt && account.expiresAt < new Date()) {
       console.log("Microsoft token expired, refreshing...");
-
       const tokens = await refreshCalendarAccessToken(
         account._id,
         account.refreshToken,
@@ -162,19 +162,68 @@ export const syncMicrosoft = async (req, res) => {
         process.env.MICROSOFT_CLIENT_ID,
         process.env.MICROSOFT_CLIENT_SECRET
       );
-
       account.accessToken = tokens.accessToken; // keep local variable updated
     }
     const headers = { Authorization: `Bearer ${account.accessToken}` };
-    const deltaUrl = account.deltaLink || 'https://graph.microsoft.com/v1.0/me/events';
-    const response = await axios.get(deltaUrl, { headers });
-    const events = response.data.value;
-    console.log(events);
-    // store the new delta link
-    const newDeltaLink = response.data['@odata.deltaLink'] || account.deltaLink;
-    account.deltaLink = newDeltaLink;
-    account.lastSyncedAt = new Date();
-    await account.save();
+    let events = [];
+    let newDeltaLink = account.deltaLink;
+    if (!account.deltaLink) {
+      // First sync: get all events with pagination
+      let url = 'https://graph.microsoft.com/v1.0/me/events';
+      let keepGoing = true;
+      while (keepGoing && url) {
+        const allEventsRes = await axios.get(url, { headers });
+        if (allEventsRes.data.value && Array.isArray(allEventsRes.data.value)) {
+          events = events.concat(allEventsRes.data.value);
+        }
+        if (allEventsRes.data['@odata.nextLink']) {
+          url = allEventsRes.data['@odata.nextLink'];
+        } else {
+          keepGoing = false;
+        }
+      }
+      // Then get the delta link (with pagination)
+      let deltaUrl = 'https://graph.microsoft.com/v1.0/me/events/delta';
+      let lastDeltaResponse = null;
+      keepGoing = true;
+      while (keepGoing && deltaUrl) {
+        const deltaRes = await axios.get(deltaUrl, { headers });
+        lastDeltaResponse = deltaRes;
+        if (deltaRes.data.value && Array.isArray(deltaRes.data.value)) {
+          events = events.concat(deltaRes.data.value);
+        }
+        if (deltaRes.data['@odata.nextLink']) {
+          deltaUrl = deltaRes.data['@odata.nextLink'];
+        } else {
+          keepGoing = false;
+        }
+      }
+      newDeltaLink = lastDeltaResponse?.data['@odata.deltaLink'] || null;
+      account.deltaLink = newDeltaLink;
+      account.lastSyncedAt = new Date();
+      await account.save();
+    } else {
+      // Use delta link for incremental sync (with pagination)
+      let deltaUrl = account.deltaLink;
+      let lastDeltaResponse = null;
+      let keepGoing = true;
+      while (keepGoing && deltaUrl) {
+        const response = await axios.get(deltaUrl, { headers });
+        lastDeltaResponse = response;
+        if (response.data.value && Array.isArray(response.data.value)) {
+          events = events.concat(response.data.value);
+        }
+        if (response.data['@odata.nextLink']) {
+          deltaUrl = response.data['@odata.nextLink'];
+        } else {
+          keepGoing = false;
+        }
+      }
+      newDeltaLink = lastDeltaResponse?.data['@odata.deltaLink'] || account.deltaLink;
+      account.deltaLink = newDeltaLink;
+      account.lastSyncedAt = new Date();
+      await account.save();
+    }
 
     for (const e of events) {
       if (e["@removed"]) {
@@ -187,8 +236,6 @@ export const syncMicrosoft = async (req, res) => {
         });
         continue;
       }
-
-      // otherwise create or update
       await Event.findOneAndUpdate(
         {
           calendarAccountId: account._id,
@@ -202,43 +249,15 @@ export const syncMicrosoft = async (req, res) => {
           title: e.subject,
           description: e.bodyPreview,
           location: e.location?.displayName,
-          start: (() => {
-            const winTZ = e.originalStartTimeZone || e.start?.timeZone;
-            let ianaTZ = 'UTC';
-            try {
-              const iana = findIana(winTZ);
-              if (iana && iana.length > 0) ianaTZ = iana[0].value;
-            } catch (err) {}
-            // Fallback for India Standard Time
-            if ((!ianaTZ || ianaTZ === 'UTC') && winTZ === 'India Standard Time') {
-              ianaTZ = 'Asia/Kolkata';
-            }
-            const localString = typeof e.start?.dateTime === 'string' ? e.start.dateTime : new Date(e.start?.dateTime).toISOString();
-            const utcMoment = moment.tz(localString, ianaTZ).utc();
-            return {
-              dateTime: utcMoment.toDate(),
-              timeZone: winTZ, // Store the original Windows timezone string
-              ianaTimeZone: ianaTZ, // Store the mapped IANA timezone
-            };
-          })(),
-          end: (() => {
-            const winTZ = e.originalEndTimeZone || e.end?.timeZone;
-            let ianaTZ = 'UTC';
-            try {
-              const iana = findIana(winTZ);
-              if (iana && iana.length > 0) ianaTZ = iana[0].value;
-            } catch (err) {}
-            if ((!ianaTZ || ianaTZ === 'UTC') && winTZ === 'India Standard Time') {
-              ianaTZ = 'Asia/Kolkata';
-            }
-            const localString = typeof e.end?.dateTime === 'string' ? e.end.dateTime : new Date(e.end?.dateTime).toISOString();
-            const utcMoment = moment.tz(localString, ianaTZ).utc();
-            return {
-              dateTime: utcMoment.toDate(),
-              timeZone: winTZ, // Store the original Windows timezone string
-              ianaTimeZone: ianaTZ, // Store the mapped IANA timezone
-            };
-          })(),
+          start: {
+            dateTime: new Date(e.start?.dateTime + "Z"), // Store as received (UTC)
+            timeZone: e.start?.timeZone || 'UTC',
+          },
+          end: {
+            dateTime: new Date(e.end?.dateTime + "Z"), // Store as received (UTC)
+            timeZone: e.end?.timeZone || 'UTC',
+          },
+          isAllDay: Boolean(e.isAllDay),
           organizer: {
             email: e.organizer?.emailAddress?.address,
             name: e.organizer?.emailAddress?.name,
