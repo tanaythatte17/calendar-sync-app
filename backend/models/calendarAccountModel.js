@@ -9,7 +9,15 @@ const CalendarAccountSchema = new mongoose.Schema({
   syncToken: { type: String },     // Google sync token
   deltaLink: { type: String },     // Microsoft delta link
   lastSyncedAt: { type: Date },
-  expiresAt: {  type: Date }
+  expiresAt: {  type: Date },
+  calendarList: [{
+    calendarId: { type: String, required: true }, // Unique per calendar
+    name: { type: String },                       // Calendar display name
+    syncToken: { type: String },                  // For Google calendars
+    deltaLink: { type: String },                  // For Microsoft calendars
+    color: { type: String },                      // UI color (Google: from calendar.colorId, Microsoft: custom if needed)
+  }],
+  calendarListSyncToken : { type: String}
 });
 
 const calendarAccount = mongoose.model("calendarAccount", CalendarAccountSchema);

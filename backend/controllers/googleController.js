@@ -169,6 +169,99 @@ export const syncGoogle = async (req, res) => {
 
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
+    const previousCalendars = account.calendarList || [];
+    const previousCalendarMap = new Map(previousCalendars.map(c => [c.calendarId, c]));
+
+    let fetchedCalendars = [];
+    let nextSyncToken = null;
+
+    if (account.calendarListSyncToken) {
+      // 🔄 Incremental sync using syncToken
+      const calendarListRes = await calendar.calendarList.list({
+        syncToken: account.calendarListSyncToken,
+      });
+
+      fetchedCalendars = calendarListRes.data.items || [];
+      nextSyncToken = calendarListRes.data.nextSyncToken;
+
+      // Store updated calendars and collect deleted calendarIds
+      const updatedMap = new Map();
+      const removedCalendarIds = [];
+
+      for (const c of fetchedCalendars) {
+        if (c.deleted) {
+          removedCalendarIds.push(c.id);
+        } else {
+          const existing = previousCalendarMap.get(c.id);
+          updatedMap.set(c.id, {
+            calendarId: c.id,
+            name: c.summary,
+            syncToken: existing?.syncToken || null,
+            deltaLink: existing?.deltaLink || null,
+            color: c.backgroundColor || null,
+          });
+        }
+      }
+
+      // Build updated calendar list (retain others not touched by this sync)
+      const newCalendarList = [];
+      for (const [id, cal] of previousCalendarMap) {
+        if (!removedCalendarIds.includes(id)) {
+          newCalendarList.push(updatedMap.get(id) || cal);
+        }
+      }
+
+      // Remove events of deleted calendars
+      if (removedCalendarIds.length > 0) {
+        await Event.deleteMany({
+          calendarAccountId: account._id,
+          calendarId: { $in: removedCalendarIds },
+        });
+      }
+
+      // Save changes
+      account.calendarList = newCalendarList;
+      account.calendarListSyncToken = nextSyncToken;
+      await account.save();
+
+    } else {
+      // 🔁 Full refresh (initial sync or expired token)
+      const calendarListRes = await calendar.calendarList.list();
+      const calendarList = calendarListRes.data.items || [];
+      nextSyncToken = calendarListRes.data.nextSyncToken;
+
+      const currentCalendarIds = new Set(calendarList.map(c => c.id));
+      const previousCalendarIds = new Set(previousCalendars.map(c => c.calendarId));
+
+      // Find removed calendarIds
+      const removedCalendarIds = [...previousCalendarIds].filter(id => !currentCalendarIds.has(id));
+
+      // Build updated calendar list
+      const updatedCalendarList = calendarList.map(c => {
+        const existing = previousCalendarMap.get(c.id);
+        return {
+          calendarId: c.id,
+          name: c.summary,
+          syncToken: existing?.syncToken || null,
+          deltaLink: existing?.deltaLink || null,
+          color: c.backgroundColor || null,
+        };
+      });
+
+      // Delete events for removed calendars
+      if (removedCalendarIds.length > 0) {
+        await Event.deleteMany({
+          calendarAccountId: account._id,
+          calendarId: { $in: removedCalendarIds },
+        });
+      }
+
+      // Save changes
+      account.calendarList = updatedCalendarList;
+      account.calendarListSyncToken = nextSyncToken;
+      await account.save();
+    }
+
     const params = {
       calendarId: 'primary',
       maxResults: 2500,

@@ -10,11 +10,19 @@ import moment from 'moment-timezone';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
+interface CalendarListItem {
+  calendarId: string;
+  name: string;
+  color?: string;
+  // ...other fields...
+}
+
 interface CalendarAccount {
   id: string;
   provider: 'google' | 'microsoft';
   email: string;
   isConnected: boolean;
+  calendarList?: CalendarListItem[]; // Add this line
 }
 
 interface Event {
@@ -387,7 +395,7 @@ const Dashboard: React.FC = () => {
               {accounts.map((account) => (
                 <div
                   key={account.id}
-                  className="flex items-center p-4 border border-blue-100 rounded-xl hover:bg-blue-50 transition-all duration-200 gap-3"
+                  className="flex flex-col gap-2 p-4 border border-blue-100 rounded-xl hover:bg-blue-50 transition-all duration-200"
                 >
                   <div className="flex items-center gap-3 w-full">
                     {account.provider === 'google' ? (
@@ -432,6 +440,26 @@ const Dashboard: React.FC = () => {
                       Sync
                     </button>
                   </div>
+                  {/* Render calendarList if present */}
+                  {account.calendarList && account.calendarList.length > 0 && (
+                    <div className="flex flex-col gap-2 mt-2">
+                      {account.calendarList.map((cal) => (
+                        <label
+                          key={cal.calendarId}
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold"
+                          style={{
+                            backgroundColor: cal.color || '#e0e7ff',
+                            color: '#222',
+                            border: '1px solid #e5e7eb',
+                          }}
+                          title={cal.calendarId}
+                        >
+                          <input type="checkbox" checked readOnly className="accent-blue-600" />
+                          <span>{cal.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
 
@@ -775,4 +803,4 @@ const Dashboard: React.FC = () => {
   );
 };
 
-export default Dashboard; 
+export default Dashboard;
