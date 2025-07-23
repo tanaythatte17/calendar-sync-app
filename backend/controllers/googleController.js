@@ -262,98 +262,109 @@ export const syncGoogle = async (req, res) => {
       await account.save();
     }
 
-    const params = {
-      calendarId: 'primary',
-      maxResults: 2500,
-      showDeleted: true,
-    };
+    let eventsCount = 0;
+    for (const calendarEntry of account.calendarList) {
+      const calendarId = calendarEntry.calendarId;
+      const syncToken = calendarEntry.syncToken;
 
-    if (account.syncToken) {
-      params.syncToken = account.syncToken;
-    } else {
-      // first-time sync within 2-year window
-      const now = new Date();
-      const twoYearsAgo = new Date();
-      twoYearsAgo.setFullYear(now.getFullYear() - 2);
-      const twoYearsAhead = new Date();
-      twoYearsAhead.setFullYear(now.getFullYear() + 2);
-      params.timeMin = twoYearsAgo.toISOString();
-      params.timeMax = twoYearsAhead.toISOString();
-    }
+      const params = {
+        calendarId,
+        maxResults: 2500,
+        showDeleted: true,
+      };
 
-    let allEvents = [];
-    let pageToken = undefined;
-    do {
-      if (pageToken) params.pageToken = pageToken;
-      const result = await calendar.events.list(params);
-      const events = result.data.items;
-      allEvents = allEvents.concat(events);
-      pageToken = result.data.nextPageToken;
-    } while (pageToken);
-
-    for (const e of allEvents) {
-      // handle deleted/cancelled events
-      if (e.status === 'cancelled') {
-        await Event.deleteOne({
-          calendarAccountId: account._id,
-          externalId: e.id,
-          source: 'google'
-        });
-        continue;
+      if (syncToken) {
+        params.syncToken = syncToken;
+      } else {
+        // Full sync (initial)
+        const now = new Date();
+        const twoYearsAgo = new Date();
+        twoYearsAgo.setFullYear(now.getFullYear() - 2);
+        const twoYearsAhead = new Date();
+        twoYearsAhead.setFullYear(now.getFullYear() + 2);
+        params.timeMin = twoYearsAgo.toISOString();
+        params.timeMax = twoYearsAhead.toISOString();
       }
-      // otherwise add or update
-      await Event.findOneAndUpdate(
-        {
-          calendarAccountId: account._id,
-          externalId: e.id,
-          source: 'google'
-        },
-        {
-          calendarAccountId: account._id,
-          source: 'google',
-          externalId: e.id,
-          title: e.summary,
-          description: e.description,
-          location: e.location,
-          start: {
-            dateTime: new Date(e.start?.dateTime || e.start?.date),
-            timeZone: e.start?.timeZone || 'UTC'
-          },
-          end: {
-            dateTime: new Date(e.end?.dateTime || e.end?.date),
-            timeZone: e.end?.timeZone || 'UTC'
-          },
-          isAllDay: Boolean(e.start?.date && !e.start?.dateTime),
-          organizer: {
-            email: e.organizer?.email,
-            name: e.organizer?.displayName
-          },
-          attendees: e.attendees?.map(a => ({
-            email: a.email,
-            name: a.displayName,
-            responseStatus: a.responseStatus
-          })),
-          isRecurring: !!e.recurringEventId,
-          recurringEventId: e.recurringEventId,
-          status: e.status,
-          htmlLink: e.htmlLink,
-          raw: e,
-          updatedAt: new Date()
-        },
-        { upsert: true, new: true }
-      );
-    }
 
+      let allEvents = [];
+      let pageToken = undefined;
+      do {
+        if (pageToken) params.pageToken = pageToken;
+        const result = await calendar.events.list(params);
+        const events = result.data.items || [];
+        allEvents = allEvents.concat(events);
+        pageToken = result.data.nextPageToken;
+
+        // Save syncToken after last page
+        if (!pageToken && result.data.nextSyncToken) {
+          calendarEntry.syncToken = result.data.nextSyncToken;
+        }
+      } while (pageToken);
+
+      eventsCount += allEvents.length;
+
+      for (const e of allEvents) {
+        if (e.status === 'cancelled') {
+          await Event.deleteOne({
+            calendarAccountId: account._id,
+            externalId: e.id,
+            calendarId: calendarId,
+            source: 'google',
+          });
+          continue;
+        }
+
+        await Event.findOneAndUpdate(
+          {
+            calendarAccountId: account._id,
+            externalId: e.id,
+            calendarId: calendarId,
+            source: 'google',
+          },
+          {
+            calendarAccountId: account._id,
+            calendarId: calendarId,
+            source: 'google',
+            externalId: e.id,
+            title: e.summary,
+            description: e.description,
+            location: e.location,
+            start: {
+              dateTime: new Date(e.start?.dateTime || e.start?.date),
+              timeZone: e.start?.timeZone || 'UTC',
+            },
+            end: {
+              dateTime: new Date(e.end?.dateTime || e.end?.date),
+              timeZone: e.end?.timeZone || 'UTC',
+            },
+            isAllDay: Boolean(e.start?.date && !e.start?.dateTime),
+            organizer: {
+              email: e.organizer?.email,
+              name: e.organizer?.displayName,
+            },
+            attendees: e.attendees?.map((a) => ({
+              email: a.email,
+              name: a.displayName,
+              responseStatus: a.responseStatus,
+            })),
+            isRecurring: !!e.recurringEventId,
+            recurringEventId: e.recurringEventId,
+            status: e.status,
+            htmlLink: e.htmlLink,
+            raw: e,
+            updatedAt: new Date(),
+          },
+          { upsert: true, new: true }
+        );
+      }
+    }
     // save sync token
-    // Use the last result's nextSyncToken (from the last page)
-    const lastResult = await calendar.events.list(params);
-    account.syncToken = lastResult.data.nextSyncToken;
     account.lastSyncedAt = new Date();
     await account.save();
 
     res.json({
       message: "Google calendar sync complete",
-      synced: allEvents.length
+      synced: eventsCount
     });
 
   } catch (err) {
