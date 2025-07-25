@@ -129,6 +129,7 @@ const Dashboard: React.FC = () => {
   const [attendeeEmail, setAttendeeEmail] = useState('');
   const [selectedUserTimeZone, setSelectedUserTimeZone] = useState(user?.timezone || 'UTC');
   const [tzSaveStatus, setTzSaveStatus] = useState<string | null>(null);
+  const [selectedCalendars, setSelectedCalendars] = useState<{ [calendarId: string]: boolean }>({});
 
   useEffect(() => {
     // Only set if the timezone exists in the dropdown
@@ -144,6 +145,7 @@ const Dashboard: React.FC = () => {
 
   // Move fetchData outside useEffect
   const fetchData = async () => {
+    setLoading(true);
     try {
       const [accountsRes, eventsRes] = await Promise.all([
         api.get(`${API_URL}/user/accounts`),
@@ -151,10 +153,8 @@ const Dashboard: React.FC = () => {
       ]);
       setAccounts(accountsRes.data);
       setEvents(eventsRes.data);
-      console.log('Fetched events:', eventsRes.data);
     } catch (err) {
       setError('Failed to load calendar data');
-      console.error('Error fetching data:', err);
     } finally {
       setLoading(false);
     }
@@ -163,6 +163,17 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // When accounts change, select all calendars by default
+  useEffect(() => {
+    const newSelected: { [calendarId: string]: boolean } = {};
+    accounts.forEach(account => {
+      account.calendarList?.forEach(cal => {
+        newSelected[cal.calendarId] = true;
+      });
+    });
+    setSelectedCalendars(newSelected);
+  }, [accounts]);
 
   const handleConnectGoogle = async () => {
     try {
@@ -201,15 +212,14 @@ const Dashboard: React.FC = () => {
 
   const getEventsForDate = (date: Date) => {
     return events.filter(event => {
+      // Only show events from selected calendars
+      if (event.calendarId && selectedCalendars && !selectedCalendars[event.calendarId]) {
+        return false;
+      }
       let eventDate;
       const ianaTZ = user?.timezone || 'UTC';
       eventDate = toZonedTime(new Date(event.start.dateTime), ianaTZ);
       const match = eventDate.toDateString() === date.toDateString();
-      console.log('Checking event:', event.title, {
-        eventDate: eventDate.toString(),
-        selectedDate: date.toString(),
-        match
-      });
       return match;
     });
   };
@@ -281,19 +291,17 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
-          <p className="text-gray-600 text-lg">Loading your calendar...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      {/* Loading overlay spinner */}
+      {loading && (
+        <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
+          <div className="flex flex-col items-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
+            <p className="text-gray-700 text-base">Loading...</p>
+          </div>
+        </div>
+      )}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
@@ -454,7 +462,17 @@ const Dashboard: React.FC = () => {
                           }}
                           title={cal.calendarId}
                         >
-                          <input type="checkbox" checked readOnly className="accent-blue-600" />
+                          <input
+                            type="checkbox"
+                            checked={!!selectedCalendars[cal.calendarId]}
+                            onChange={() => {
+                              setSelectedCalendars(prev => ({
+                                ...prev,
+                                [cal.calendarId]: !prev[cal.calendarId]
+                              }));
+                            }}
+                            className="accent-blue-600"
+                          />
                           <span>{cal.name}</span>
                         </label>
                       ))}
@@ -538,7 +556,7 @@ const Dashboard: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  {(() => { const filtered = getEventsForDate(selectedDate); console.log('Events for selected date:', filtered); return filtered; })().map((event, idx) => (
+                  {(() => { const filtered = getEventsForDate(selectedDate); return filtered; })().map((event, idx) => (
                     <div
                       key={event._id ? event._id : event.externalId ? event.externalId : idx}
                       className="p-4 sm:p-6 border border-blue-100 rounded-xl hover:bg-blue-50 transition-all duration-200 shadow-sm hover:shadow-md"

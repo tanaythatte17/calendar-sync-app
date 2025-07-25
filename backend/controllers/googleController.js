@@ -131,6 +131,7 @@ export const googleCallback = async (req, res) => {
 };
 
 export const syncGoogle = async (req, res) => {
+  console.log('Inside syncGoogle');
   try {
     // Get userId from req.user (set by protectRoute middleware)
     const userId = req.user?._id;
@@ -265,7 +266,7 @@ export const syncGoogle = async (req, res) => {
     let eventsCount = 0;
     for (const calendarEntry of account.calendarList) {
       const calendarId = calendarEntry.calendarId;
-      const syncToken = calendarEntry.syncToken;
+      let syncToken = calendarEntry.syncToken;
 
       const params = {
         calendarId,
@@ -273,36 +274,68 @@ export const syncGoogle = async (req, res) => {
         showDeleted: true,
       };
 
-      if (syncToken) {
-        params.syncToken = syncToken;
-      } else {
-        // Full sync (initial)
-        const now = new Date();
-        const twoYearsAgo = new Date();
-        twoYearsAgo.setFullYear(now.getFullYear() - 2);
-        const twoYearsAhead = new Date();
-        twoYearsAhead.setFullYear(now.getFullYear() + 2);
-        params.timeMin = twoYearsAgo.toISOString();
-        params.timeMax = twoYearsAhead.toISOString();
-      }
-
+      let triedFullSync = false;
       let allEvents = [];
       let pageToken = undefined;
-      do {
-        if (pageToken) params.pageToken = pageToken;
-        const result = await calendar.events.list(params);
-        const events = result.data.items || [];
-        allEvents = allEvents.concat(events);
-        pageToken = result.data.nextPageToken;
 
-        // Save syncToken after last page
-        if (!pageToken && result.data.nextSyncToken) {
-          calendarEntry.syncToken = result.data.nextSyncToken;
+      do {
+        if (syncToken) params.syncToken = syncToken;
+        else {
+          // Full sync (initial)
+          const now = new Date();
+          const twoYearsAgo = new Date();
+          twoYearsAgo.setFullYear(now.getFullYear() - 2);
+          const twoYearsAhead = new Date();
+          twoYearsAhead.setFullYear(now.getFullYear() + 2);
+          params.timeMin = twoYearsAgo.toISOString();
+          params.timeMax = twoYearsAhead.toISOString();
+          delete params.syncToken;
+        }
+
+        try {
+          if (pageToken) params.pageToken = pageToken;
+          const result = await calendar.events.list(params);
+          const events = result.data.items || [];
+          allEvents = allEvents.concat(events);
+          pageToken = result.data.nextPageToken;
+
+          // Save syncToken after last page
+          if (!pageToken && result.data.nextSyncToken) {
+            calendarEntry.syncToken = result.data.nextSyncToken;
+          }
+        } catch (err) {
+          // Handle sync token invalid (410) for this calendar only
+          if (err.code === 410 && !triedFullSync) {
+            // Clear syncToken for this calendar and retry full sync once
+            calendarEntry.syncToken = null;
+            syncToken = null;
+            triedFullSync = true;
+            pageToken = undefined;
+            // Remove timeMin/timeMax in case they were set
+            delete params.timeMin;
+            delete params.timeMax;
+            continue;
+          } else {
+            throw err;
+          }
         }
       } while (pageToken);
 
-      eventsCount += allEvents.length;
+      // --- START: Handle deletions and updates on full sync ---
+      // If this was a full sync (no syncToken), remove events from DB that are not present in allEvents
+      if (!calendarEntry.syncToken && !triedFullSync) {
+        const externalIds = allEvents.map(e => e.id);
+        await Event.deleteMany({
+          calendarAccountId: account._id,
+          calendarId: calendarId,
+          source: 'google',
+          externalId: { $nin: externalIds }
+        });
+      }
+      // --- END: Handle deletions and updates on full sync ---
 
+      eventsCount += allEvents.length;
+      console.log(`Fetched ${allEvents.length} events for calendar ${calendarId}`);
       for (const e of allEvents) {
         if (e.status === 'cancelled') {
           await Event.deleteOne({
@@ -369,12 +402,13 @@ export const syncGoogle = async (req, res) => {
 
   } catch (err) {
     if (err.code === 410) {
+      console.log(err);
       // token invalid
       await calendarAccount.updateOne(
         { userId: req.user._id, provider: 'google' },
         { $unset: { syncToken: "" } }
       );
-      return res.status(410).send("Sync token expired, please reconnect.");
+      return res.status(410).send("Sync token expired, please reconnect.",err.message);
     }
     console.error("Google sync failed:", err);
     res.status(500).send("Google sync failed.");
