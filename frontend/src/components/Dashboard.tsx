@@ -612,7 +612,7 @@ const Dashboard: React.FC = () => {
                 {getTimelineEvents(selectedDate).map(({ event, top, height, left, width }, idx) => (
                   <div
                     key={event._id || event.externalId || idx}
-                    className="absolute rounded-lg shadow-md cursor-pointer transition hover:scale-105 flex flex-col justify-center"
+                    className="absolute rounded-lg shadow-md cursor-pointer transition hover:scale-105 flex flex-col justify-center items-center"
                     style={{
                       top,
                       left,
@@ -623,21 +623,43 @@ const Dashboard: React.FC = () => {
                       padding: '8px',
                       border: '2px solid #fff',
                       zIndex: 20 + left,
-                      overflow: 'hidden',
+                      overflow: 'hidden', // ensure text does not overflow the box
                       boxSizing: 'border-box',
                       minHeight: '32px',
-                      maxHeight: '160px',
                       display: 'flex',
                       alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                     onClick={() => setSelectedEvent(event)}
                     title={event.title}
                   >
-                    <span className="font-semibold text-sm truncate w-full" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' }}>
+                    <span
+                      className="font-semibold text-sm w-full"
+                      style={{
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        textAlign: 'center',
+                        lineHeight: '1.2',
+                        maxWidth: '100%', // restrict to box width
+                        display: 'block',
+                      }}
+                    >
                       {event.title}
                     </span>
                     {event.description && (
-                      <span className="text-xs truncate w-full" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' }}>
+                      <span
+                        className="text-xs w-full"
+                        style={{
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          textAlign: 'center',
+                          lineHeight: '1.2',
+                          maxWidth: '100%',
+                          display: 'block',
+                        }}
+                      >
                         {event.description}
                       </span>
                     )}
