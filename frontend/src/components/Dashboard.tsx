@@ -612,20 +612,21 @@ const Dashboard: React.FC = () => {
                 {getTimelineEvents(selectedDate).map(({ event, top, height, left, width }, idx) => (
                   <div
                     key={event._id || event.externalId || idx}
-                    className="absolute rounded-lg shadow-md cursor-pointer transition hover:scale-105 flex flex-col justify-center items-center"
+                    className={`absolute rounded-lg shadow-md cursor-pointer transition hover:scale-105 flex flex-col justify-center items-center
+                      ${event.isAllDay ? 'all-day-event' : ''}`}
                     style={{
-                      top,
+                      top: event.isAllDay ? 0 : top,
                       left,
                       width,
-                      height,
+                      height: event.isAllDay ? 40 : height, // All-day events fixed height
                       background: getCalendarColor(event.calendarId),
                       color: '#222',
                       padding: '8px',
                       border: '2px solid #fff',
                       zIndex: 20 + left,
-                      overflow: 'hidden', // ensure text does not overflow the box
+                      overflow: 'hidden',
                       boxSizing: 'border-box',
-                      minHeight: '32px',
+                      minHeight: event.isAllDay ? '40px' : '32px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -641,13 +642,14 @@ const Dashboard: React.FC = () => {
                         textOverflow: 'ellipsis',
                         textAlign: 'center',
                         lineHeight: '1.2',
-                        maxWidth: '100%', // restrict to box width
+                        maxWidth: '100%',
                         display: 'block',
                       }}
                     >
                       {event.title}
+                      {event.isAllDay && <span className="ml-2 text-xs font-normal text-gray-500">(All day)</span>}
                     </span>
-                    {event.description && (
+                    {!event.isAllDay && event.description && (
                       <span
                         className="text-xs w-full"
                         style={{
@@ -712,7 +714,9 @@ const Dashboard: React.FC = () => {
             <div className="mb-2 text-sm text-gray-700">{selectedEvent.description}</div>
             <div className="mb-2 text-sm">
               <span className="font-semibold">Time:</span>{' '}
-              {format(toZonedTime(new Date(selectedEvent.start.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')} - {format(toZonedTime(new Date(selectedEvent.end.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')}
+              {selectedEvent.isAllDay
+                ? 'All day'
+                : `${format(toZonedTime(new Date(selectedEvent.start.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')} - ${format(toZonedTime(new Date(selectedEvent.end.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')}`}
             </div>
             <div className="mb-2 text-sm">
               <span className="font-semibold">Calendar:</span> {getCalendarName(selectedEvent.calendarId)}
