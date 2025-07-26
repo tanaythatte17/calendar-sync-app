@@ -131,7 +131,6 @@ export const googleCallback = async (req, res) => {
 };
 
 export const syncGoogle = async (req, res) => {
-  console.log('Inside syncGoogle');
   try {
     // Get userId from req.user (set by protectRoute middleware)
     const userId = req.user?._id;
@@ -335,7 +334,6 @@ export const syncGoogle = async (req, res) => {
       // --- END: Handle deletions and updates on full sync ---
 
       eventsCount += allEvents.length;
-      console.log(`Fetched ${allEvents.length} events for calendar ${calendarId}`);
       for (const e of allEvents) {
         if (e.status === 'cancelled') {
           await Event.deleteOne({
