@@ -165,132 +165,207 @@ export const syncMicrosoft = async (req, res) => {
       account.accessToken = tokens.accessToken; // keep local variable updated
     }
     const headers = { Authorization: `Bearer ${account.accessToken}` };
-    let events = [];
-    let newDeltaLink = account.deltaLink;
-    if (!account.deltaLink) {
-      // First sync: get all events with pagination
-      let url = 'https://graph.microsoft.com/v1.0/me/events';
-      let keepGoing = true;
-      while (keepGoing && url) {
-        const allEventsRes = await axios.get(url, { headers });
-        if (allEventsRes.data.value && Array.isArray(allEventsRes.data.value)) {
-          events = events.concat(allEventsRes.data.value);
-        }
-        if (allEventsRes.data['@odata.nextLink']) {
-          url = allEventsRes.data['@odata.nextLink'];
-        } else {
-          keepGoing = false;
-        }
-      }
-      // Then get the delta link (with pagination)
-      let deltaUrl = 'https://graph.microsoft.com/v1.0/me/events/delta';
-      let lastDeltaResponse = null;
-      keepGoing = true;
-      while (keepGoing && deltaUrl) {
-        const deltaRes = await axios.get(deltaUrl, { headers });
-        lastDeltaResponse = deltaRes;
-        if (deltaRes.data.value && Array.isArray(deltaRes.data.value)) {
-          events = events.concat(deltaRes.data.value);
-        }
-        if (deltaRes.data['@odata.nextLink']) {
-          deltaUrl = deltaRes.data['@odata.nextLink'];
-        } else {
-          keepGoing = false;
-        }
-      }
-      newDeltaLink = lastDeltaResponse?.data['@odata.deltaLink'] || null;
-      account.deltaLink = newDeltaLink;
-      account.lastSyncedAt = new Date();
-      await account.save();
-    } else {
-      // Use delta link for incremental sync (with pagination)
-      let deltaUrl = account.deltaLink;
-      let lastDeltaResponse = null;
-      let keepGoing = true;
-      while (keepGoing && deltaUrl) {
-        const response = await axios.get(deltaUrl, { headers });
-        lastDeltaResponse = response;
-        if (response.data.value && Array.isArray(response.data.value)) {
-          events = events.concat(response.data.value);
-        }
-        if (response.data['@odata.nextLink']) {
-          deltaUrl = response.data['@odata.nextLink'];
-        } else {
-          keepGoing = false;
-        }
-      }
-      newDeltaLink = lastDeltaResponse?.data['@odata.deltaLink'] || account.deltaLink;
-      account.deltaLink = newDeltaLink;
-      account.lastSyncedAt = new Date();
-      await account.save();
+
+    // 1. Fetch all calendars for the user
+    const calendarsRes = await axios.get('https://graph.microsoft.com/v1.0/me/calendars', { headers });
+    const calendars = calendarsRes.data.value || [];
+
+    // 2. Prepare calendarList for the account (like Google)
+    const previousCalendars = account.calendarList || [];
+    const previousCalendarMap = new Map(previousCalendars.map(c => [c.calendarId, c]));
+
+    // Merge/retain deltaLinks for existing calendars
+    const updatedCalendarList = calendars.map(cal => {
+      const existing = previousCalendarMap.get(cal.id);
+      return {
+        calendarId: cal.id,
+        name: cal.name,
+        color: cal.color || null,
+        deltaLink: existing?.deltaLink || null,
+      };
+    });
+
+    // Remove deleted calendars' events
+    const currentCalendarIds = new Set(calendars.map(c => c.id));
+    const previousCalendarIds = new Set(previousCalendars.map(c => c.calendarId));
+    const removedCalendarIds = [...previousCalendarIds].filter(id => !currentCalendarIds.has(id));
+    if (removedCalendarIds.length > 0) {
+      await Event.deleteMany({
+        calendarAccountId: account._id,
+        calendarId: { $in: removedCalendarIds },
+        source: 'microsoft',
+      });
     }
 
-    for (const e of events) {
-      if (e["@removed"]) {
-        // event was deleted
-        console.log('Deleting event:', e.id);
-        await Event.deleteOne({
-          calendarAccountId: account._id,
-          externalId: e.id,
-          source: 'microsoft',
-        });
-        continue;
+    account.calendarList = updatedCalendarList;
+    await account.save();
+
+    // 3. Sync events for each calendar individually using deltaLink
+    let totalEvents = 0;
+    for (const calendarEntry of account.calendarList) {
+      const calendarId = calendarEntry.calendarId;
+      let deltaLink = calendarEntry.deltaLink;
+      let events = [];
+      let newDeltaLink = deltaLink;
+      let keepGoing = true;
+      let triedFullSync = false;
+
+      while (true) {
+        try {
+          if (!deltaLink) {
+            // First sync: get all events with pagination
+            let url = `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events`;
+            keepGoing = true;
+            while (keepGoing && url) {
+              const allEventsRes = await axios.get(url, { headers });
+              if (allEventsRes.data.value && Array.isArray(allEventsRes.data.value)) {
+                events = events.concat(allEventsRes.data.value);
+              }
+              if (allEventsRes.data['@odata.nextLink']) {
+                url = allEventsRes.data['@odata.nextLink'];
+              } else {
+                keepGoing = false;
+              }
+            }
+            // Then get the delta link (with pagination)
+            let deltaUrl = `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events/delta`;
+            let lastDeltaResponse = null;
+            keepGoing = true;
+            while (keepGoing && deltaUrl) {
+              const deltaRes = await axios.get(deltaUrl, { headers });
+              lastDeltaResponse = deltaRes;
+              if (deltaRes.data.value && Array.isArray(deltaRes.data.value)) {
+                events = events.concat(deltaRes.data.value);
+              }
+              if (deltaRes.data['@odata.nextLink']) {
+                deltaUrl = deltaRes.data['@odata.nextLink'];
+              } else {
+                keepGoing = false;
+              }
+            }
+            newDeltaLink = lastDeltaResponse?.data['@odata.deltaLink'] || null;
+            calendarEntry.deltaLink = newDeltaLink;
+          } else {
+            // Use delta link for incremental sync (with pagination)
+            let deltaUrl = deltaLink;
+            let lastDeltaResponse = null;
+            keepGoing = true;
+            while (keepGoing && deltaUrl) {
+              const response = await axios.get(deltaUrl, { headers });
+              lastDeltaResponse = response;
+              if (response.data.value && Array.isArray(response.data.value)) {
+                events = events.concat(response.data.value);
+              }
+              if (response.data['@odata.nextLink']) {
+                deltaUrl = response.data['@odata.nextLink'];
+              } else {
+                keepGoing = false;
+              }
+            }
+            newDeltaLink = lastDeltaResponse?.data['@odata.deltaLink'] || deltaLink;
+            calendarEntry.deltaLink = newDeltaLink;
+          }
+          break; // success, exit while(true)
+        } catch (err) {
+          // Handle delta link expired (410) for this calendar only
+          if (err.response?.status === 410 && !triedFullSync) {
+            // Clear deltaLink for this calendar and retry full sync once
+            calendarEntry.deltaLink = null;
+            deltaLink = null;
+            triedFullSync = true;
+            // --- START: Handle deletions and updates on full sync ---
+            // If this was a full sync (deltaLink expired), remove events from DB that are not present in events
+            const externalIds = events.map(e => e.id);
+            await Event.deleteMany({
+              calendarAccountId: account._id,
+              calendarId: calendarId,
+              source: 'microsoft',
+              externalId: { $nin: externalIds }
+            });
+            // --- END ---
+            continue;
+          } else {
+            throw err;
+          }
+        }
       }
-      await Event.findOneAndUpdate(
-        {
-          calendarAccountId: account._id,
-          externalId: e.id,
-          source: 'microsoft',
-        },
-        {
-          calendarAccountId: account._id,
-          source: 'microsoft',
-          externalId: e.id,
-          title: e.subject,
-          description: e.bodyPreview,
-          location: e.location?.displayName,
-          start: {
-            dateTime: new Date(e.start?.dateTime + "Z"), // Store as received (UTC)
-            timeZone: e.start?.timeZone || 'UTC',
+
+      // Save events for this calendar
+      for (const e of events) {
+        if (e["@removed"]) {
+          await Event.deleteOne({
+            calendarAccountId: account._id,
+            externalId: e.id,
+            calendarId: calendarId,
+            source: 'microsoft',
+          });
+          continue;
+        }
+        await Event.findOneAndUpdate(
+          {
+            calendarAccountId: account._id,
+            externalId: e.id,
+            calendarId: calendarId,
+            source: 'microsoft',
           },
-          end: {
-            dateTime: new Date(e.end?.dateTime + "Z"), // Store as received (UTC)
-            timeZone: e.end?.timeZone || 'UTC',
+          {
+            calendarAccountId: account._id,
+            calendarId: calendarId,
+            source: 'microsoft',
+            externalId: e.id,
+            title: e.subject,
+            description: e.bodyPreview,
+            location: e.location?.displayName,
+            start: {
+              dateTime: new Date(e.start?.dateTime + "Z"),
+              timeZone: e.start?.timeZone || 'UTC',
+            },
+            end: {
+              dateTime: new Date(e.end?.dateTime + "Z"),
+              timeZone: e.end?.timeZone || 'UTC',
+            },
+            isAllDay: Boolean(e.isAllDay),
+            organizer: {
+              email: e.organizer?.emailAddress?.address,
+              name: e.organizer?.emailAddress?.name,
+            },
+            attendees: e.attendees?.map(a => ({
+              email: a.emailAddress?.address,
+              name: a.emailAddress?.name,
+              responseStatus: a.status?.response,
+            })),
+            isRecurring: e.type === 'seriesMaster',
+            recurringEventId: e.seriesMasterId,
+            status: e.isCancelled ? 'cancelled' : (e.showAs === 'tentative' ? 'tentative' : 'confirmed'),
+            htmlLink: e.webLink,
+            raw: e,
+            updatedAt: new Date()
           },
-          isAllDay: Boolean(e.isAllDay),
-          organizer: {
-            email: e.organizer?.emailAddress?.address,
-            name: e.organizer?.emailAddress?.name,
-          },
-          attendees: e.attendees?.map(a => ({
-            email: a.emailAddress?.address,
-            name: a.emailAddress?.name,
-            responseStatus: a.status?.response,
-          })),
-          isRecurring: e.type === 'seriesMaster',
-          recurringEventId: e.seriesMasterId,
-          status: e.isCancelled ? 'cancelled' : (e.showAs === 'tentative' ? 'tentative' : 'confirmed'),
-          htmlLink: e.webLink,
-          raw: e,
-          updatedAt: new Date()
-        },
-        { upsert: true, new: true }
-      );
+          { upsert: true, new: true }
+        );
+      }
+      totalEvents += events.length;
     }
+
+    account.lastSyncedAt = new Date();
+    await account.save();
 
     res.json({
       message: "Microsoft calendar sync complete",
-      synced: events.length
+      synced: totalEvents
     });
 
   } catch (err) {
     // delta link expired
     if (err.response?.status === 410) {
-      await calendarAccount.updateOne(
-        { userId: userId, provider: 'microsoft' }, // Fix: use userId instead of Id
-        { $unset: { deltaLink: "" } }
-      );
-      return res.status(410).send("Delta link expired, please reconnect.");
+      // Only clear deltaLink for the calendar that failed, not all calendars
+      // This block should not clear all deltaLinks, so remove:
+      // if (Array.isArray(account.calendarList)) {
+      //   account.calendarList.forEach(cal => { cal.deltaLink = null; });
+      //   await account.save();
+      // }
+      // Instead, just respond with error
+      return res.status(410).send("Delta link expired for a calendar, please reconnect or resync.");
     }
     console.error("Microsoft sync failed:", err.message || err);
     res.status(500).send("Microsoft sync failed.");
