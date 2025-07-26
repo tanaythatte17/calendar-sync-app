@@ -60,6 +60,7 @@ interface Event {
   htmlLink?: string;
   updatedAt: string;
   isAllDay?: boolean;
+  calendarId?: string; // Add this property
 }
 
 interface NewEvent {
@@ -211,6 +212,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // Updated getEventsForDate function to use the current timezone
   const getEventsForDate = (date: Date) => {
     return events.filter(event => {
       // Only show events from selected calendars
@@ -218,7 +220,7 @@ const Dashboard: React.FC = () => {
         return false;
       }
       let eventDate;
-      const ianaTZ = user?.timezone || 'UTC';
+      const ianaTZ = selectedUserTimeZone || user?.timezone || 'UTC';
       eventDate = toZonedTime(new Date(event.start.dateTime), ianaTZ);
       const match = eventDate.toDateString() === date.toDateString();
       return match;
@@ -308,6 +310,47 @@ const Dashboard: React.FC = () => {
       if (cal) return cal.name;
     }
     return '';
+  };
+
+  // Memoized timeline events calculation with timezone dependency
+  const getTimelineEvents = (date: Date) => {
+    const eventsForDay = getEventsForDate(date);
+    const positionedEvents: Array<{ event: Event, top: number, height: number, left: number, width: number }> = [];
+    const sorted = [...eventsForDay].sort((a, b) => new Date(a.start.dateTime).getTime() - new Date(b.start.dateTime).getTime());
+    const lanes: Array<Array<{ event: Event, top: number, height: number }>> = [];
+    
+    const currentTz = selectedUserTimeZone || user?.timezone || 'UTC';
+    
+    sorted.forEach(ev => {
+      // Convert event times to the selected timezone
+      const start = toZonedTime(new Date(ev.start.dateTime), currentTz);
+      const end = toZonedTime(new Date(ev.end.dateTime), currentTz);
+      
+      const dayStart = new Date(date);
+      dayStart.setHours(0, 0, 0, 0);
+      
+      const minutesFromStart = ((start.getTime() - dayStart.getTime()) / 60000);
+      const minutesToEnd = ((end.getTime() - dayStart.getTime()) / 60000);
+      
+      // 48px per hour
+      const top = Math.max(0, minutesFromStart / 60 * 48);
+      const height = Math.max(32, (minutesToEnd - minutesFromStart) / 60 * 48); // min 32px
+      
+      // Find lane
+      let laneIdx = 0;
+      while (lanes[laneIdx] && lanes[laneIdx].some(laneEv => {
+        const laneStart = laneEv.top;
+        const laneEnd = laneEv.top + laneEv.height;
+        return top < laneEnd && (top + height) > laneStart;
+      })) {
+        laneIdx++;
+      }
+      if (!lanes[laneIdx]) lanes[laneIdx] = [];
+      lanes[laneIdx].push({ event: ev, top, height });
+      positionedEvents.push({ event: ev, top, height, left: laneIdx * 220, width: 200 });
+    });
+    
+    return positionedEvents;
   };
 
   return (
@@ -565,73 +608,41 @@ const Dashboard: React.FC = () => {
               </div>
               {/* Events */}
               <div className="ml-20 relative" style={{ height: 25 * 48 }}>
-                {/* Calculate event positions */}
-                {(() => {
-                  const eventsForDay = getEventsForDate(selectedDate);
-                  // Map events to timeline positions
-                  const positionedEvents: Array<{ event: Event, top: number, height: number, left: number, width: number }> = [];
-                  // Sort by start time
-                  const sorted = [...eventsForDay].sort((a, b) => new Date(a.start.dateTime).getTime() - new Date(b.start.dateTime).getTime());
-                  // For overlap logic
-                  const lanes: Array<Array<{ event: Event, top: number, height: number }>> = [];
-                  sorted.forEach(ev => {
-                    const start = new Date(ev.start.dateTime);
-                    const end = new Date(ev.end.dateTime);
-                    const dayStart = new Date(selectedDate);
-                    dayStart.setHours(0, 0, 0, 0);
-                    const minutesFromStart = ((start.getTime() - dayStart.getTime()) / 60000);
-                    const minutesToEnd = ((end.getTime() - dayStart.getTime()) / 60000);
-                    // 48px per hour
-                    const top = Math.max(0, minutesFromStart / 60 * 48);
-                    const height = Math.max(32, (minutesToEnd - minutesFromStart) / 60 * 48); // min 32px
-                    // Find lane
-                    let laneIdx = 0;
-                    while (lanes[laneIdx] && lanes[laneIdx].some(laneEv => {
-                      const laneStart = laneEv.top;
-                      const laneEnd = laneEv.top + laneEv.height;
-                      return top < laneEnd && (top + height) > laneStart;
-                    })) {
-                      laneIdx++;
-                    }
-                    if (!lanes[laneIdx]) lanes[laneIdx] = [];
-                    lanes[laneIdx].push({ event: ev, top, height });
-                    positionedEvents.push({ event: ev, top, height, left: laneIdx * 220, width: 200 });
-                  });
-                  return positionedEvents.map(({ event, top, height, left, width }, idx) => (
-                    <div
-                      key={event._id || event.externalId || idx}
-                      className="absolute rounded-lg shadow-md cursor-pointer transition hover:scale-105 flex flex-col justify-center"
-                      style={{
-                        top,
-                        left,
-                        width,
-                        height,
-                        background: getCalendarColor(event.calendarId),
-                        color: '#222',
-                        padding: '8px',
-                        border: '2px solid #fff',
-                        zIndex: 20 + left,
-                        overflow: 'hidden',
-                        boxSizing: 'border-box',
-                        minHeight: '32px',
-                        maxHeight: '160px',
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                      onClick={() => setSelectedEvent(event)}
-                      title={event.title}
-                    >
-                      <span className="font-semibold text-sm truncate w-full" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' }}>
-                        {event.title}
+                {/* Render timeline events with timezone awareness */}
+                {getTimelineEvents(selectedDate).map(({ event, top, height, left, width }, idx) => (
+                  <div
+                    key={event._id || event.externalId || idx}
+                    className="absolute rounded-lg shadow-md cursor-pointer transition hover:scale-105 flex flex-col justify-center"
+                    style={{
+                      top,
+                      left,
+                      width,
+                      height,
+                      background: getCalendarColor(event.calendarId),
+                      color: '#222',
+                      padding: '8px',
+                      border: '2px solid #fff',
+                      zIndex: 20 + left,
+                      overflow: 'hidden',
+                      boxSizing: 'border-box',
+                      minHeight: '32px',
+                      maxHeight: '160px',
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                    onClick={() => setSelectedEvent(event)}
+                    title={event.title}
+                  >
+                    <span className="font-semibold text-sm truncate w-full" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' }}>
+                      {event.title}
+                    </span>
+                    {event.description && (
+                      <span className="text-xs truncate w-full" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' }}>
+                        {event.description}
                       </span>
-                      {event.description && (
-                        <span className="text-xs truncate w-full" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' }}>
-                          {event.description}
-                        </span>
-                      )}
-                    </div>
-                  ));
-                })()}
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
             {/* If no events */}
@@ -679,7 +690,7 @@ const Dashboard: React.FC = () => {
             <div className="mb-2 text-sm text-gray-700">{selectedEvent.description}</div>
             <div className="mb-2 text-sm">
               <span className="font-semibold">Time:</span>{' '}
-              {format(new Date(selectedEvent.start.dateTime), 'HH:mm')} - {format(new Date(selectedEvent.end.dateTime), 'HH:mm')}
+              {format(toZonedTime(new Date(selectedEvent.start.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')} - {format(toZonedTime(new Date(selectedEvent.end.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')}
             </div>
             <div className="mb-2 text-sm">
               <span className="font-semibold">Calendar:</span> {getCalendarName(selectedEvent.calendarId)}
