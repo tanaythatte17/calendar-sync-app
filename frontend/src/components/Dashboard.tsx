@@ -130,6 +130,7 @@ const Dashboard: React.FC = () => {
   const [selectedUserTimeZone, setSelectedUserTimeZone] = useState(user?.timezone || 'UTC');
   const [tzSaveStatus, setTzSaveStatus] = useState<string | null>(null);
   const [selectedCalendars, setSelectedCalendars] = useState<{ [calendarId: string]: boolean }>({});
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
 
   useEffect(() => {
     // Only set if the timezone exists in the dropdown
@@ -289,6 +290,24 @@ const Dashboard: React.FC = () => {
       case 'tentative': return 'bg-yellow-100 text-yellow-800';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  // Helper to get calendar color by calendarId
+  const getCalendarColor = (calendarId: string) => {
+    for (const acc of accounts) {
+      const cal = acc.calendarList?.find(c => c.calendarId === calendarId);
+      if (cal) return cal.color || '#e0e7ff';
+    }
+    return '#e0e7ff';
+  };
+
+  // Helper to get calendar name by calendarId
+  const getCalendarName = (calendarId: string) => {
+    for (const acc of accounts) {
+      const cal = acc.calendarList?.find(c => c.calendarId === calendarId);
+      if (cal) return cal.name;
+    }
+    return '';
   };
 
   return (
@@ -512,7 +531,7 @@ const Dashboard: React.FC = () => {
         </div>
       </main>
 
-      {/* Events Modal */}
+      {/* Events Modal - Timeline View */}
       {isEventModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-blue-100">
@@ -534,119 +553,161 @@ const Dashboard: React.FC = () => {
                 </svg>
               </button>
             </div>
-            <div className="space-y-6">
-              {getEventsForDate(selectedDate).length === 0 ? (
-                <div className="text-center py-12">
-                  <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <p className="text-gray-500 text-lg mb-4">No events scheduled for this date</p>
-                  <button
-                    onClick={() => {
-                      setIsAddEventModalOpen(true);
-                      setIsEventModalOpen(false);
-                    }}
-                    className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center mx-auto"
-                  >
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    Create Event
-                  </button>
-                </div>
-              ) : (
-                <>
-                  {(() => { const filtered = getEventsForDate(selectedDate); return filtered; })().map((event, idx) => (
+            {/* Timeline grid */}
+            <div className="relative border rounded-xl bg-gray-50 p-4 overflow-x-auto" style={{ minHeight: 1200 }}>
+              {/* Time labels - show every hour */}
+              <div className="absolute left-0 top-0 bottom-0 w-16 flex flex-col justify-between z-10">
+                {[...Array(25)].map((_, i) => (
+                  <div key={i} className="text-xs text-gray-400" style={{ height: 48 }}>
+                    {`${i.toString().padStart(2, '0')}:00`}
+                  </div>
+                ))}
+              </div>
+              {/* Events */}
+              <div className="ml-20 relative" style={{ height: 25 * 48 }}>
+                {/* Calculate event positions */}
+                {(() => {
+                  const eventsForDay = getEventsForDate(selectedDate);
+                  // Map events to timeline positions
+                  const positionedEvents: Array<{ event: Event, top: number, height: number, left: number, width: number }> = [];
+                  // Sort by start time
+                  const sorted = [...eventsForDay].sort((a, b) => new Date(a.start.dateTime).getTime() - new Date(b.start.dateTime).getTime());
+                  // For overlap logic
+                  const lanes: Array<Array<{ event: Event, top: number, height: number }>> = [];
+                  sorted.forEach(ev => {
+                    const start = new Date(ev.start.dateTime);
+                    const end = new Date(ev.end.dateTime);
+                    const dayStart = new Date(selectedDate);
+                    dayStart.setHours(0, 0, 0, 0);
+                    const minutesFromStart = ((start.getTime() - dayStart.getTime()) / 60000);
+                    const minutesToEnd = ((end.getTime() - dayStart.getTime()) / 60000);
+                    // 48px per hour
+                    const top = Math.max(0, minutesFromStart / 60 * 48);
+                    const height = Math.max(32, (minutesToEnd - minutesFromStart) / 60 * 48); // min 32px
+                    // Find lane
+                    let laneIdx = 0;
+                    while (lanes[laneIdx] && lanes[laneIdx].some(laneEv => {
+                      const laneStart = laneEv.top;
+                      const laneEnd = laneEv.top + laneEv.height;
+                      return top < laneEnd && (top + height) > laneStart;
+                    })) {
+                      laneIdx++;
+                    }
+                    if (!lanes[laneIdx]) lanes[laneIdx] = [];
+                    lanes[laneIdx].push({ event: ev, top, height });
+                    positionedEvents.push({ event: ev, top, height, left: laneIdx * 220, width: 200 });
+                  });
+                  return positionedEvents.map(({ event, top, height, left, width }, idx) => (
                     <div
-                      key={event._id ? event._id : event.externalId ? event.externalId : idx}
-                      className="p-4 sm:p-6 border border-blue-100 rounded-xl hover:bg-blue-50 transition-all duration-200 shadow-sm hover:shadow-md"
+                      key={event._id || event.externalId || idx}
+                      className="absolute rounded-lg shadow-md cursor-pointer transition hover:scale-105 flex flex-col justify-center"
+                      style={{
+                        top,
+                        left,
+                        width,
+                        height,
+                        background: getCalendarColor(event.calendarId),
+                        color: '#222',
+                        padding: '8px',
+                        border: '2px solid #fff',
+                        zIndex: 20 + left,
+                        overflow: 'hidden',
+                        boxSizing: 'border-box',
+                        minHeight: '32px',
+                        maxHeight: '160px',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      onClick={() => setSelectedEvent(event)}
+                      title={event.title}
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-4 gap-2">
-                        <div className="flex-1">
-                          <h4 className="text-lg sm:text-xl font-bold text-gray-900 mb-2">{event.title}</h4>
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-gray-600">
-                            <span className="flex items-center">
-                              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              {event.isAllDay ? 'All day' : (() => {
-                                const ianaTZ = user?.timezone || 'UTC';
-                                const startZoned = toZonedTime(new Date(event.start.dateTime), ianaTZ);
-                                const endZoned = toZonedTime(new Date(event.end.dateTime), ianaTZ);
-                                const tzAbbr = startZoned
-                                  .toLocaleTimeString('en-us', { timeZone: ianaTZ, timeZoneName: 'short' })
-                                  .split(' ')
-                                  .pop();
-                                return `${format(startZoned, 'HH:mm')} - ${format(endZoned, 'HH:mm')} ${tzAbbr}`;
-                              })()}
-                            </span>
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEventStatusColor(event.status)}`}>
-                              {event.status}
-                            </span>
-                          </div>
-                        </div>
-                        <span className="text-xs text-gray-500 capitalize bg-gray-100 px-2 py-1 rounded-full self-start">
-                          {event.source}
-                        </span>
-                      </div>
-                      
+                      <span className="font-semibold text-sm truncate w-full" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' }}>
+                        {event.title}
+                      </span>
                       {event.description && (
-                        <p className="text-gray-700 mb-4">{event.description}</p>
-                      )}
-                      
-                      {event.location && (
-                        <p className="text-gray-600 mb-4 flex items-center">
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                          </svg>
-                          {event.location}
-                        </p>
-                      )}
-                      
-                      {event.attendees && event.attendees.length > 0 && (
-                        <div className="mb-4">
-                          <p className="text-sm font-medium text-gray-700 mb-2">Attendees:</p>
-                          <div className="flex flex-wrap gap-2">
-                            {event.attendees.map((attendee) => (
-                              <span key={attendee.email || attendee.name} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
-                                {attendee.name || attendee.email}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      
-                      {event.htmlLink && (
-                        <a
-                          href={event.htmlLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center text-blue-600 hover:text-blue-800 text-sm font-medium"
-                        >
-                          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                          Open in Calendar
-                        </a>
+                        <span className="text-xs truncate w-full" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' }}>
+                          {event.description}
+                        </span>
                       )}
                     </div>
+                  ));
+                })()}
+              </div>
+            </div>
+            {/* If no events */}
+            {getEventsForDate(selectedDate).length === 0 && (
+              <div className="text-center py-12">
+                <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <p className="text-gray-500 text-lg mb-4">No events scheduled for this date</p>
+                <button
+                  onClick={() => {
+                    setIsAddEventModalOpen(true);
+                    setIsEventModalOpen(false);
+                  }}
+                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center mx-auto"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create Event
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Event Detail Modal */}
+      {selectedEvent && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-blue-100">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold" style={{ color: getCalendarColor(selectedEvent.calendarId) }}>
+                {selectedEvent.title}
+              </h3>
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="mb-2 text-sm text-gray-700">{selectedEvent.description}</div>
+            <div className="mb-2 text-sm">
+              <span className="font-semibold">Time:</span>{' '}
+              {format(new Date(selectedEvent.start.dateTime), 'HH:mm')} - {format(new Date(selectedEvent.end.dateTime), 'HH:mm')}
+            </div>
+            <div className="mb-2 text-sm">
+              <span className="font-semibold">Calendar:</span> {getCalendarName(selectedEvent.calendarId)}
+            </div>
+            {selectedEvent.location && (
+              <div className="mb-2 text-sm">
+                <span className="font-semibold">Location:</span> {selectedEvent.location}
+              </div>
+            )}
+            {selectedEvent.attendees && selectedEvent.attendees.length > 0 && (
+              <div className="mb-2 text-sm">
+                <span className="font-semibold">Attendees:</span>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {selectedEvent.attendees.map((a, i) => (
+                    <span key={a.email || a.name || i} className="bg-gray-100 px-2 py-1 rounded text-xs">
+                      {a.name || a.email}
+                    </span>
                   ))}
-                  
-                  <button
-                    onClick={() => {
-                      setIsAddEventModalOpen(true);
-                      setIsEventModalOpen(false);
-                    }}
-                    className="w-full mt-8 px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center font-semibold"
-                  >
-                    <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    Create New Event
-                  </button>
-                </>
-              )}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setSelectedEvent(null)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
