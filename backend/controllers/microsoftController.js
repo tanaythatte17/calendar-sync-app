@@ -257,11 +257,9 @@ export const syncMicrosoft = async (req, res) => {
               if (response.data.value && Array.isArray(response.data.value)) {
                 // Collect changed event IDs and removed events
                 for (const event of response.data.value) {
-                  console.log(event);
                   if (event["@removed"]) {
                     // Add removed events directly to events array
                     events.push(event);
-                    console.log('deleted');
                   } else {
                     // Collect IDs of changed events to fetch full data
                     changedEventIds.push(event.id);
