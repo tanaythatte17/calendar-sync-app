@@ -169,7 +169,6 @@ export const syncMicrosoft = async (req, res) => {
     // 1. Fetch all calendars for the user
     const calendarsRes = await axios.get('https://graph.microsoft.com/v1.0/me/calendars', { headers });
     const calendars = calendarsRes.data.value || [];
-
     // 2. Prepare calendarList for the account (like Google)
     const previousCalendars = account.calendarList || [];
     const previousCalendarMap = new Map(previousCalendars.map(c => [c.calendarId, c]));
@@ -246,26 +245,61 @@ export const syncMicrosoft = async (req, res) => {
             newDeltaLink = lastDeltaResponse?.data['@odata.deltaLink'] || null;
             calendarEntry.deltaLink = newDeltaLink;
           } else {
-            // Use delta link for incremental sync (with pagination)
+            // Incremental sync: Use existing delta link
             let deltaUrl = deltaLink;
-            let lastDeltaResponse = null;
-            keepGoing = true;
+            let changedEventIds = [];
+            let keepGoing = true;
+            
+            // First, get all changed event IDs from delta
             while (keepGoing && deltaUrl) {
               const response = await axios.get(deltaUrl, { headers });
-              lastDeltaResponse = response;
+              
               if (response.data.value && Array.isArray(response.data.value)) {
-                events = events.concat(response.data.value);
+                // Collect changed event IDs and removed events
+                for (const event of response.data.value) {
+                  console.log(event);
+                  if (event["@removed"]) {
+                    // Add removed events directly to events array
+                    events.push(event);
+                    console.log('deleted');
+                  } else {
+                    // Collect IDs of changed events to fetch full data
+                    changedEventIds.push(event.id);
+                  }
+                }
               }
+              
               if (response.data['@odata.nextLink']) {
                 deltaUrl = response.data['@odata.nextLink'];
               } else {
                 keepGoing = false;
+                // Update delta link for next sync
+                newDeltaLink = response.data['@odata.deltaLink'] || deltaLink;
               }
             }
-            newDeltaLink = lastDeltaResponse?.data['@odata.deltaLink'] || deltaLink;
+            
+            // Fetch full data for each changed event
+            for (const eventId of changedEventIds) {
+              try {
+                const fullEventRes = await axios.get(
+                  `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events/${eventId}`,
+                  { headers }
+                );
+                events.push(fullEventRes.data);
+              } catch (fetchErr) {
+                if (fetchErr.response?.status === 404) {
+                  // Event was deleted, treat as removed
+                  events.push({ id: eventId, "@removed": true });
+                } else {
+                  console.error(`Failed to fetch event ${eventId}:`, fetchErr.message);
+                  // Continue with other events
+                }
+              }
+            }
+            
             calendarEntry.deltaLink = newDeltaLink;
           }
-          break; // success, exit while(true)
+          break;
         } catch (err) {
           // Handle delta link expired (410) for this calendar only
           if (err.response?.status === 410 && !triedFullSync) {
