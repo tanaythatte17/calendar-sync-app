@@ -321,22 +321,59 @@ const Dashboard: React.FC = () => {
     
     const currentTz = selectedUserTimeZone || user?.timezone || 'UTC';
     
+    // Create the day start in the selected timezone
+    const dayStart = new Date(date);
+    dayStart.setHours(0, 0, 0, 0);
+    
     sorted.forEach(ev => {
+      // Handle all-day events
+      if (ev.isAllDay) {
+        positionedEvents.push({ 
+          event: ev, 
+          top: 0, 
+          height: 40, 
+          left: 0, 
+          width: 200 
+        });
+        return;
+      }
+
       // Convert event times to the selected timezone
-      const start = toZonedTime(new Date(ev.start.dateTime), currentTz);
-      const end = toZonedTime(new Date(ev.end.dateTime), currentTz);
+      const eventStart = toZonedTime(new Date(ev.start.dateTime), currentTz);
+      const eventEnd = toZonedTime(new Date(ev.end.dateTime), currentTz);
       
-      const dayStart = new Date(date);
-      dayStart.setHours(0, 0, 0, 0);
+      // Create timezone-aware day boundaries
+      const dayStartInTz = toZonedTime(dayStart, currentTz);
+      const dayEndInTz = new Date(dayStartInTz);
+      dayEndInTz.setHours(23, 59, 59, 999);
       
-      const minutesFromStart = ((start.getTime() - dayStart.getTime()) / 60000);
-      const minutesToEnd = ((end.getTime() - dayStart.getTime()) / 60000);
+      // Calculate start and end times relative to the day start
+      let displayStart = eventStart;
+      let displayEnd = eventEnd;
       
-      // 48px per hour
-      const top = Math.max(0, minutesFromStart / 60 * 48);
-      const height = Math.max(32, (minutesToEnd - minutesFromStart) / 60 * 48); // min 32px
+      // Clamp events that start before or end after the current day
+      if (eventStart < dayStartInTz) {
+        displayStart = dayStartInTz;
+      }
+      if (eventEnd > dayEndInTz) {
+        displayEnd = dayEndInTz;
+      }
       
-      // Find lane
+      // Skip events that don't overlap with this day
+      if (eventEnd <= dayStartInTz || eventStart >= dayEndInTz) {
+        return;
+      }
+      
+      // Calculate minutes from day start
+      const minutesFromStart = (displayStart.getTime() - dayStartInTz.getTime()) / (1000 * 60);
+      const minutesToEnd = (displayEnd.getTime() - dayStartInTz.getTime()) / (1000 * 60);
+
+      // Convert to pixels (60px per hour = 1px per minute)
+      const pixelsPerMinute = 60 / 60; // 1px per minute
+      const top = Math.max(0, minutesFromStart * pixelsPerMinute);
+      const height = Math.max(32, (minutesToEnd - minutesFromStart) * pixelsPerMinute);
+      
+      // Find appropriate lane for this event
       let laneIdx = 0;
       while (lanes[laneIdx] && lanes[laneIdx].some(laneEv => {
         const laneStart = laneEv.top;
@@ -345,9 +382,17 @@ const Dashboard: React.FC = () => {
       })) {
         laneIdx++;
       }
+      
       if (!lanes[laneIdx]) lanes[laneIdx] = [];
       lanes[laneIdx].push({ event: ev, top, height });
-      positionedEvents.push({ event: ev, top, height, left: laneIdx * 220, width: 200 });
+      
+      positionedEvents.push({ 
+        event: ev, 
+        top, 
+        height, 
+        left: laneIdx * 220, 
+        width: 200 
+      });
     });
     
     return positionedEvents;
@@ -598,72 +643,79 @@ const Dashboard: React.FC = () => {
             </div>
             {/* Timeline grid */}
             <div className="relative border rounded-xl bg-gray-50 p-4 overflow-x-auto" style={{ minHeight: 1200 }}>
-              {/* Time labels - show every hour */}
-              <div className="absolute left-0 top-0 bottom-0 w-16 flex flex-col justify-between z-10">
-                {[...Array(25)].map((_, i) => (
-                  <div key={i} className="text-xs text-gray-400" style={{ height: 48 }}>
+              {/* Time labels - positioned absolutely at exact hour positions */}
+              <div className="absolute left-0 top-0 w-16 z-10" style={{ height: 24 * 60 }}>
+                {[...Array(24)].map((_, i) => (
+                  <div 
+                    key={i} 
+                    className="absolute text-xs text-gray-400 flex items-center h-4"
+                    style={{ 
+                      top: i * 60 + 5, // Offset by half the text height to center on grid line
+                      left: 0,
+                      width: '60px'
+                    }}
+                  >
                     {`${i.toString().padStart(2, '0')}:00`}
                   </div>
                 ))}
               </div>
-              {/* Events */}
-              <div className="ml-20 relative" style={{ height: 25 * 48 }}>
-                {/* Render timeline events with timezone awareness */}
+              
+              {/* Events container */}
+              <div className="ml-20 relative" style={{ height: 24 * 60 }}>
+                {/* Horizontal grid lines - one for each hour */}
+                {[...Array(24)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="absolute w-full border-t border-gray-200"
+                    style={{ 
+                      top: i * 60, 
+                      left: 0, 
+                      right: 0,
+                      height: 1
+                    }}
+                  />
+                ))}
+                
+                {/* Events with fixed positioning */}
                 {getTimelineEvents(selectedDate).map(({ event, top, height, left, width }, idx) => (
                   <div
                     key={event._id || event.externalId || idx}
-                    className={`absolute rounded-lg shadow-md cursor-pointer transition hover:scale-105 flex flex-col justify-center items-center
+                    className={`absolute rounded-lg shadow-md cursor-pointer transition hover:scale-105 flex flex-col justify-start p-2
                       ${event.isAllDay ? 'all-day-event' : ''}`}
                     style={{
                       top: event.isAllDay ? 0 : top,
                       left,
                       width,
-                      height: event.isAllDay ? 40 : height, // All-day events fixed height
+                      height: event.isAllDay ? 40 : height,
                       background: getCalendarColor(event.calendarId),
                       color: '#222',
-                      padding: '8px',
                       border: '2px solid #fff',
                       zIndex: 20 + left,
                       overflow: 'hidden',
                       boxSizing: 'border-box',
                       minHeight: event.isAllDay ? '40px' : '32px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
                     }}
                     onClick={() => setSelectedEvent(event)}
-                    title={event.title}
+                    title={`${event.title} - ${
+                      event.isAllDay 
+                        ? 'All day' 
+                        : `${format(toZonedTime(new Date(event.start.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')} - ${format(toZonedTime(new Date(event.end.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')}`
+                    }`}
                   >
-                    <span
-                      className="font-semibold text-sm w-full"
-                      style={{
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        textAlign: 'center',
-                        lineHeight: '1.2',
-                        maxWidth: '100%',
-                        display: 'block',
-                      }}
-                    >
+                    <div className="font-semibold text-sm truncate w-full">
                       {event.title}
-                      {event.isAllDay && <span className="ml-2 text-xs font-normal text-gray-500">(All day)</span>}
-                    </span>
-                    {!event.isAllDay && event.description && (
-                      <span
-                        className="text-xs w-full"
-                        style={{
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          textAlign: 'center',
-                          lineHeight: '1.2',
-                          maxWidth: '100%',
-                          display: 'block',
-                        }}
-                      >
+                      {event.isAllDay && <span className="ml-1 text-xs font-normal">(All day)</span>}
+                    </div>
+                    {!event.isAllDay && height > 50 && (
+                      <div className="text-xs text-gray-600 mt-1">
+                        {format(toZonedTime(new Date(event.start.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')} - 
+                        {format(toZonedTime(new Date(event.end.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')}
+                      </div>
+                    )}
+                    {!event.isAllDay && event.description && height > 70 && (
+                      <div className="text-xs text-gray-600 mt-1 truncate">
                         {event.description}
-                      </span>
+                      </div>
                     )}
                   </div>
                 ))}
