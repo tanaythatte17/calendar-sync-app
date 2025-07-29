@@ -702,7 +702,18 @@ const Dashboard: React.FC = () => {
                         : `${format(toZonedTime(new Date(event.start.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')} - ${format(toZonedTime(new Date(event.end.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')}`
                     }`}
                   >
-                    <div className="font-semibold text-sm truncate w-full">
+                    <div
+                      className="font-semibold w-full"
+                      style={{
+                        fontSize: '12px',
+                        whiteSpace: 'normal',
+                        lineHeight: 1.1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxHeight: '100%',
+                        wordBreak: 'break-word',
+                      }}
+                    >
                       {event.title}
                       {event.isAllDay && <span className="ml-1 text-xs font-normal">(All day)</span>}
                     </div>
