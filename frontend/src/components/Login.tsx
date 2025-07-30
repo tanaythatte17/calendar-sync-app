@@ -138,6 +138,12 @@ const Login: React.FC = () => {
                   '& .MuiInputLabel-root.Mui-focused': {
                     color: '#667eea',
                   },
+                  // Prevent grey autofill background
+                  '& input:-webkit-autofill': {
+                    WebkitBoxShadow: '0 0 0 1000px #fff inset',
+                    boxShadow: '0 0 0 1000px #fff inset',
+                    WebkitTextFillColor: '#222',
+                  },
                 }}
               />
               <TextField
@@ -233,4 +239,4 @@ const Login: React.FC = () => {
   );
 };
 
-export default Login; 
+export default Login;
