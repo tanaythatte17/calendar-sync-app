@@ -34,7 +34,7 @@ const Register: React.FC = () => {
       await register(name, email, password, confirmPassword);
       navigate('/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to register');
+      setError(err instanceof Error ? err.response.data.error : 'Failed to register');
     }
   };
 
