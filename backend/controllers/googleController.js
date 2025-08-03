@@ -134,7 +134,6 @@ export const syncGoogle = async (req, res) => {
   try {
     // Get userId from req.user (set by protectRoute middleware)
     const userId = req.user?._id;
-    // Get email from query or req.user (if needed)
     const userEmail = req.query.email || req.user?.email;
 
     if (!userId || !userEmail) {
@@ -159,7 +158,7 @@ export const syncGoogle = async (req, res) => {
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET
       );
-      account.accessToken = tokens.accessToken; // keep local variable updated
+      account.accessToken = tokens.accessToken;
     }
 
     oauth2Client.setCredentials({
@@ -169,6 +168,7 @@ export const syncGoogle = async (req, res) => {
 
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
+    // Handle calendar list sync (unchanged from your original)
     const previousCalendars = account.calendarList || [];
     const previousCalendarMap = new Map(previousCalendars.map(c => [c.calendarId, c]));
 
@@ -176,7 +176,7 @@ export const syncGoogle = async (req, res) => {
     let nextSyncToken = null;
 
     if (account.calendarListSyncToken) {
-      // 🔄 Incremental sync using syncToken
+      // Incremental calendar list sync
       const calendarListRes = await calendar.calendarList.list({
         syncToken: account.calendarListSyncToken,
       });
@@ -184,7 +184,6 @@ export const syncGoogle = async (req, res) => {
       fetchedCalendars = calendarListRes.data.items || [];
       nextSyncToken = calendarListRes.data.nextSyncToken;
 
-      // Store updated calendars and collect deleted calendarIds
       const updatedMap = new Map();
       const removedCalendarIds = [];
 
@@ -197,13 +196,11 @@ export const syncGoogle = async (req, res) => {
             calendarId: c.id,
             name: c.summary,
             syncToken: existing?.syncToken || null,
-            deltaLink: existing?.deltaLink || null,
             color: c.backgroundColor || null,
           });
         }
       }
 
-      // Build updated calendar list (retain others not touched by this sync)
       const newCalendarList = [];
       for (const [id, cal] of previousCalendarMap) {
         if (!removedCalendarIds.includes(id)) {
@@ -211,205 +208,391 @@ export const syncGoogle = async (req, res) => {
         }
       }
 
-      // Remove events of deleted calendars
       if (removedCalendarIds.length > 0) {
         await Event.deleteMany({
           calendarAccountId: account._id,
           calendarId: { $in: removedCalendarIds },
+          source: 'google',
         });
       }
 
-      // Save changes
       account.calendarList = newCalendarList;
       account.calendarListSyncToken = nextSyncToken;
       await account.save();
 
     } else {
-      // 🔁 Full refresh (initial sync or expired token)
+      // Full calendar list refresh
       const calendarListRes = await calendar.calendarList.list();
       const calendarList = calendarListRes.data.items || [];
       nextSyncToken = calendarListRes.data.nextSyncToken;
 
       const currentCalendarIds = new Set(calendarList.map(c => c.id));
       const previousCalendarIds = new Set(previousCalendars.map(c => c.calendarId));
-
-      // Find removed calendarIds
       const removedCalendarIds = [...previousCalendarIds].filter(id => !currentCalendarIds.has(id));
 
-      // Build updated calendar list
       const updatedCalendarList = calendarList.map(c => {
         const existing = previousCalendarMap.get(c.id);
         return {
           calendarId: c.id,
           name: c.summary,
           syncToken: existing?.syncToken || null,
-          deltaLink: existing?.deltaLink || null,
           color: c.backgroundColor || null,
         };
       });
 
-      // Delete events for removed calendars
       if (removedCalendarIds.length > 0) {
         await Event.deleteMany({
           calendarAccountId: account._id,
           calendarId: { $in: removedCalendarIds },
+          source: 'google',
         });
       }
 
-      // Save changes
       account.calendarList = updatedCalendarList;
       account.calendarListSyncToken = nextSyncToken;
       await account.save();
     }
 
-    let eventsCount = 0;
+    // Enhanced event syncing with smart recurring event handling
+    let totalEventsProcessed = 0;
+    
     for (const calendarEntry of account.calendarList) {
       const calendarId = calendarEntry.calendarId;
       let syncToken = calendarEntry.syncToken;
-
-      const params = {
-        calendarId,
-        maxResults: 2500,
-        singleEvents: true,
-        showDeleted: true,
-      };
-
       let triedFullSync = false;
-      let allEvents = [];
-      let pageToken = undefined;
 
-      do {
-        if (syncToken) params.syncToken = syncToken;
-        else {
-          // Full sync (initial)
-          const now = new Date();
-          const twoYearsAgo = new Date();
-          twoYearsAgo.setFullYear(now.getFullYear() - 2);
-          const twoYearsAhead = new Date();
-          twoYearsAhead.setFullYear(now.getFullYear() + 2);
-          params.timeMin = twoYearsAgo.toISOString();
-          params.timeMax = twoYearsAhead.toISOString();
-          delete params.syncToken;
-        }
-
+      while (true) {
         try {
-          if (pageToken) params.pageToken = pageToken;
-          const result = await calendar.events.list(params);
-          const events = result.data.items || [];
-          allEvents = allEvents.concat(events);
-          pageToken = result.data.nextPageToken;
+          if (!syncToken) {
+            // FULL SYNC: Use hybrid approach for better performance
+            console.log(`Full sync for Google calendar ${calendarId}`);
+            const eventsProcessed = await performFullSync(calendar, calendarId, account._id);
+            totalEventsProcessed += eventsProcessed;
 
-          // Save syncToken after last page
-          if (!pageToken && result.data.nextSyncToken) {
-            calendarEntry.syncToken = result.data.nextSyncToken;
+            // Get sync token for future incremental syncs
+            const syncResult = await calendar.events.list({
+              calendarId,
+              maxResults: 1,
+              showDeleted: true,
+            });
+            calendarEntry.syncToken = syncResult.data.nextSyncToken;
+
+          } else {
+            // INCREMENTAL SYNC: Process changes efficiently
+            console.log(`Incremental sync for Google calendar ${calendarId}`);
+            const { eventsProcessed, newSyncToken } = await performIncrementalSync(
+              calendar, 
+              calendarId, 
+              syncToken, 
+              account._id
+            );
+            totalEventsProcessed += eventsProcessed;
+            calendarEntry.syncToken = newSyncToken;
           }
+          break;
+
         } catch (err) {
-          // Handle sync token invalid (410) for this calendar only
           if (err.code === 410 && !triedFullSync) {
-            // Clear syncToken for this calendar and retry full sync once
+            console.log(`Sync token expired for calendar ${calendarId}, falling back to full sync`);
             calendarEntry.syncToken = null;
             syncToken = null;
             triedFullSync = true;
-            pageToken = undefined;
-            // Remove timeMin/timeMax in case they were set
-            delete params.timeMin;
-            delete params.timeMax;
             continue;
           } else {
             throw err;
           }
         }
-      } while (pageToken);
-
-      // --- START: Handle deletions and updates on full sync ---
-      // If this was a full sync (no syncToken), remove events from DB that are not present in allEvents
-      if (!calendarEntry.syncToken && !triedFullSync) {
-        const externalIds = allEvents.map(e => e.id);
-        await Event.deleteMany({
-          calendarAccountId: account._id,
-          calendarId: calendarId,
-          source: 'google',
-          externalId: { $nin: externalIds }
-        });
-      }
-      // --- END: Handle deletions and updates on full sync ---
-
-      eventsCount += allEvents.length;
-      for (const e of allEvents) {
-        if (e.status === 'cancelled') {
-          await Event.deleteOne({
-            calendarAccountId: account._id,
-            externalId: e.id,
-            calendarId: calendarId,
-            source: 'google',
-          });
-          continue;
-        }
-
-        await Event.findOneAndUpdate(
-          {
-            calendarAccountId: account._id,
-            externalId: e.id,
-            calendarId: calendarId,
-            source: 'google',
-          },
-          {
-            calendarAccountId: account._id,
-            calendarId: calendarId,
-            source: 'google',
-            externalId: e.id,
-            title: e.summary,
-            description: e.description,
-            location: e.location,
-            start: {
-              dateTime: new Date(e.start?.dateTime || e.start?.date),
-              timeZone: e.start?.timeZone || 'UTC',
-            },
-            end: {
-              dateTime: new Date(e.end?.dateTime || e.end?.date),
-              timeZone: e.end?.timeZone || 'UTC',
-            },
-            isAllDay: Boolean(e.start?.date && !e.start?.dateTime),
-            organizer: {
-              email: e.organizer?.email,
-              name: e.organizer?.displayName,
-            },
-            attendees: e.attendees?.map((a) => ({
-              email: a.email,
-              name: a.displayName,
-              responseStatus: a.responseStatus,
-            })),
-            isRecurring: !!e.recurringEventId,
-            recurringEventId: e.recurringEventId,
-            status: e.status,
-            htmlLink: e.htmlLink,
-            raw: e,
-            updatedAt: new Date(),
-          },
-          { upsert: true, new: true }
-        );
       }
     }
-    // save sync token
+
     account.lastSyncedAt = new Date();
     await account.save();
 
     res.json({
       message: "Google calendar sync complete",
-      synced: eventsCount
+      synced: totalEventsProcessed
     });
 
   } catch (err) {
     if (err.code === 410) {
-      console.log(err);
-      // token invalid
+      console.log("Global sync token expired:", err);
       await calendarAccount.updateOne(
         { userId: req.user._id, provider: 'google' },
-        { $unset: { syncToken: "" } }
+        { $unset: { calendarListSyncToken: "", syncToken: "" } }
       );
-      return res.status(410).send("Sync token expired, please reconnect.",err.message);
+      return res.status(410).send("Sync token expired, please reconnect.");
     }
     console.error("Google sync failed:", err);
     res.status(500).send("Google sync failed.");
   }
 };
+
+// Optimized full sync with smart recurring event handling
+async function performFullSync(calendar, calendarId, accountId) {
+  const now = new Date();
+  const startDate = new Date();
+  startDate.setFullYear(now.getFullYear() - 2);
+  const endDate = new Date();
+  endDate.setFullYear(now.getFullYear() + 2);
+
+  // Step 1: Get all events (including recurring masters) without expansion
+  let allMasterEvents = [];
+  let pageToken = null;
+  
+  do {
+    const params = {
+      calendarId,
+      maxResults: 2500,
+      singleEvents: false, // Get recurring masters, not expanded instances
+      showDeleted: true,
+      timeMin: startDate.toISOString(),
+      timeMax: endDate.toISOString(),
+    };
+    
+    if (pageToken) params.pageToken = pageToken;
+    
+    const result = await calendar.events.list(params);
+    const events = result.data.items || [];
+    allMasterEvents = allMasterEvents.concat(events);
+    pageToken = result.data.nextPageToken;
+  } while (pageToken);
+
+  // Step 2: Process masters and expand only changed recurring events
+  const recurringMasters = allMasterEvents.filter(e => e.recurrence && e.recurrence.length > 0);
+  const singleEvents = allMasterEvents.filter(e => !e.recurrence || e.recurrence.length === 0);
+  
+  // Process single events
+  await processBatchEvents(singleEvents, accountId, calendarId);
+  
+  // Process recurring events efficiently
+  for (const master of recurringMasters) {
+    await processRecurringEventMaster(calendar, master, calendarId, accountId, startDate, endDate);
+  }
+
+  // Step 3: Clean up events that no longer exist
+  const allEventIds = allMasterEvents.map(e => e.id);
+  const existingEvents = await Event.find({
+    calendarAccountId: accountId,
+    calendarId: calendarId,
+    source: 'google'
+  }).select('externalId recurringEventId');
+
+  const eventsToDelete = existingEvents.filter(dbEvent => {
+    // Keep if the event ID exists in the fresh data
+    if (allEventIds.includes(dbEvent.externalId)) return false;
+    
+    // Keep if it's an instance of a recurring event that still exists
+    if (dbEvent.recurringEventId && allEventIds.includes(dbEvent.recurringEventId)) return false;
+    
+    // Otherwise, it should be deleted
+    return true;
+  });
+
+  if (eventsToDelete.length > 0) {
+    const idsToDelete = eventsToDelete.map(e => e.externalId);
+    await Event.deleteMany({
+      calendarAccountId: accountId,
+      calendarId: calendarId,
+      source: 'google',
+      externalId: { $in: idsToDelete }
+    });
+    console.log(`Cleaned up ${eventsToDelete.length} obsolete events`);
+  }
+
+  return allMasterEvents.length;
+}
+
+// Optimized incremental sync
+async function performIncrementalSync(calendar, calendarId, syncToken, accountId) {
+  let allChangedEvents = [];
+  let pageToken = null;
+  let newSyncToken = null;
+
+  do {
+    const params = {
+      calendarId,
+      maxResults: 2500,
+      syncToken,
+      showDeleted: true,
+      singleEvents: false, // Don't expand recurring events initially
+    };
+    
+    if (pageToken) params.pageToken = pageToken;
+    
+    const result = await calendar.events.list(params);
+    const events = result.data.items || [];
+    allChangedEvents = allChangedEvents.concat(events);
+    pageToken = result.data.nextPageToken;
+    
+    if (!pageToken) {
+      newSyncToken = result.data.nextSyncToken;
+    }
+  } while (pageToken);
+
+  // Process changed events
+  const recurringMasters = allChangedEvents.filter(e => e.recurrence && e.recurrence.length > 0);
+  const singleEvents = allChangedEvents.filter(e => !e.recurrence || e.recurrence.length === 0);
+  
+  // Process single events (including cancelled)
+  await processBatchEvents(singleEvents, accountId, calendarId);
+  
+  // Process recurring events
+  const now = new Date();
+  const startDate = new Date();
+  startDate.setFullYear(now.getFullYear() - 2);
+  const endDate = new Date();
+  endDate.setFullYear(now.getFullYear() + 2);
+  
+  for (const master of recurringMasters) {
+    if (master.status === 'cancelled') {
+      // Entire series was deleted
+      await Event.deleteMany({
+        calendarAccountId: accountId,
+        calendarId: calendarId,
+        source: 'google',
+        $or: [
+          { externalId: master.id },
+          { recurringEventId: master.id }
+        ]
+      });
+      console.log(`Deleted entire recurring series: ${master.id}`);
+    } else {
+      await processRecurringEventMaster(calendar, master, calendarId, accountId, startDate, endDate);
+    }
+  }
+
+  return {
+    eventsProcessed: allChangedEvents.length,
+    newSyncToken
+  };
+}
+
+// Process recurring event master efficiently
+async function processRecurringEventMaster(calendar, master, calendarId, accountId, startDate, endDate) {
+  try {
+    // Get current instances from database
+    const existingInstances = await Event.find({
+      calendarAccountId: accountId,
+      calendarId: calendarId,
+      source: 'google',
+      $or: [
+        { externalId: master.id },
+        { recurringEventId: master.id }
+      ]
+    });
+
+    // Get expanded instances from Google
+    let expandedInstances = [];
+    let pageToken = null;
+    
+    do {
+      const params = {
+        calendarId,
+        eventId: master.id,
+        maxResults: 2500,
+        timeMin: startDate.toISOString(),
+        timeMax: endDate.toISOString(),
+      };
+      
+      if (pageToken) params.pageToken = pageToken;
+      
+      const result = await calendar.events.instances(params);
+      const instances = result.data.items || [];
+      expandedInstances = expandedInstances.concat(instances);
+      pageToken = result.data.nextPageToken;
+    } while (pageToken);
+
+    // Compare and sync
+    const existingIds = new Set(existingInstances.map(e => e.externalId));
+    const freshIds = new Set(expandedInstances.map(e => e.id));
+
+    // Delete instances that no longer exist
+    const instancesToDelete = [...existingIds].filter(id => !freshIds.has(id));
+    if (instancesToDelete.length > 0) {
+      await Event.deleteMany({
+        calendarAccountId: accountId,
+        calendarId: calendarId,
+        source: 'google',
+        externalId: { $in: instancesToDelete }
+      });
+      console.log(`Deleted ${instancesToDelete.length} instances from series ${master.id}`);
+    }
+
+    // Process all fresh instances
+    await processBatchEvents(expandedInstances, accountId, calendarId);
+
+  } catch (err) {
+    console.error(`Failed to process recurring series ${master.id}:`, err.message);
+  }
+}
+
+// Batch process events for better performance
+async function processBatchEvents(events, accountId, calendarId) {
+  const bulkOps = [];
+  
+  for (const event of events) {
+    if (event.status === 'cancelled') {
+      bulkOps.push({
+        deleteOne: {
+          filter: {
+            calendarAccountId: accountId,
+            externalId: event.id,
+            calendarId: calendarId,
+            source: 'google',
+          }
+        }
+      });
+    } else {
+      bulkOps.push({
+        updateOne: {
+          filter: {
+            calendarAccountId: accountId,
+            externalId: event.id,
+            calendarId: calendarId,
+            source: 'google',
+          },
+          update: {
+            $set: {
+              calendarAccountId: accountId,
+              calendarId: calendarId,
+              source: 'google',
+              externalId: event.id,
+              title: event.summary,
+              description: event.description,
+              location: event.location,
+              start: {
+                dateTime: new Date(event.start?.dateTime || event.start?.date),
+                timeZone: event.start?.timeZone || 'UTC',
+              },
+              end: {
+                dateTime: new Date(event.end?.dateTime || event.end?.date),
+                timeZone: event.end?.timeZone || 'UTC',
+              },
+              isAllDay: Boolean(event.start?.date && !event.start?.dateTime),
+              organizer: {
+                email: event.organizer?.email,
+                name: event.organizer?.displayName,
+              },
+              attendees: event.attendees?.map((a) => ({
+                email: a.email,
+                name: a.displayName,
+                responseStatus: a.responseStatus,
+              })),
+              isRecurring: !!event.recurringEventId,
+              recurringEventId: event.recurringEventId,
+              status: event.status,
+              htmlLink: event.htmlLink,
+              raw: event,
+              updatedAt: new Date(),
+            }
+          },
+          upsert: true
+        }
+      });
+    }
+  }
+
+  if (bulkOps.length > 0) {
+    await Event.bulkWrite(bulkOps, { ordered: false });
+  }
+}
