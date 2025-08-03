@@ -270,6 +270,7 @@ export const syncGoogle = async (req, res) => {
       const params = {
         calendarId,
         maxResults: 2500,
+        singleEvents: true,
         showDeleted: true,
       };
 

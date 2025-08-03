@@ -283,14 +283,47 @@ export const syncMicrosoft = async (req, res) => {
                   `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events/${eventId}`,
                   { headers }
                 );
-                events.push(fullEventRes.data);
+                const event = fullEventRes.data;
+
+                if (event.type === 'seriesMaster') {
+                  // It's a recurring event master — fetch instances over 4-year range
+                  const now = new Date();
+                  const startDate = new Date(now);
+                  startDate.setFullYear(startDate.getFullYear() - 2);
+                  const endDate = new Date(now);
+                  endDate.setFullYear(endDate.getFullYear() + 2);
+                  const start = startDate.toISOString();
+                  const end = endDate.toISOString();
+
+                  const instancesUrl = `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events/${eventId}/instances?startDateTime=${start}&endDateTime=${end}`;
+                  let url = instancesUrl;
+                  let keepGoing = true;
+
+                  while (keepGoing && url) {
+                    try {
+                      const instanceRes = await axios.get(url, { headers });
+                      if (instanceRes.data.value && Array.isArray(instanceRes.data.value)) {
+                        events.push(...instanceRes.data.value);
+                      }
+                      if (instanceRes.data['@odata.nextLink']) {
+                        url = instanceRes.data['@odata.nextLink'];
+                      } else {
+                        keepGoing = false;
+                      }
+                    } catch (instanceErr) {
+                      console.error(`Failed to fetch instances for ${eventId}:`, instanceErr.message);
+                      keepGoing = false;
+                    }
+                  }
+                } else {
+                  // Normal single event or occurrence of recurring
+                  events.push(event);
+                }
               } catch (fetchErr) {
                 if (fetchErr.response?.status === 404) {
-                  // Event was deleted, treat as removed
                   events.push({ id: eventId, "@removed": true });
                 } else {
                   console.error(`Failed to fetch event ${eventId}:`, fetchErr.message);
-                  // Continue with other events
                 }
               }
             }
@@ -325,6 +358,7 @@ export const syncMicrosoft = async (req, res) => {
       // Save events for this calendar
       for (const e of events) {
         if (e["@removed"]) {
+          console.log('Removing event:', e);
           await Event.deleteOne({
             calendarAccountId: account._id,
             externalId: e.id,
