@@ -7,10 +7,10 @@ const generateTokenAndSetCookie = (userId, res) => {
         expiresIn: '15d'
     });
     res.cookie("jwt", token, {
-        maxAge: 15 * 24 * 60 * 60 * 1000, // 15 days in ms
+        maxAge: 24 * 60 * 60 * 1000, // 15 days in ms
         httpOnly: true,
-        sameSite: "lax", // or 'strict' if frontend/backend are on same domain
-        secure: process.env.NODE_ENV === 'production',
+        sameSite: "None", // or 'strict' if frontend/backend are on same domain
+        secure: true,
     });
     return token;
 }

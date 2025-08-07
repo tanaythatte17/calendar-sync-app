@@ -7,6 +7,7 @@ import microsoftRoutes from './routes/microsoftRoutes.js';
 import authRoutes from './routes/authRoutes.js'
 import connectToDB from "./db/connectDB.js";
 import userRoutes from "./routes/userRoutes.js";
+import calendarRoutes from './routes/calendarRoutes.js';
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ app.use('/api/auth',authRoutes);
 app.use('/api/google', googleRoutes);
 app.use('/api/microsoft', microsoftRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/calendar', calendarRoutes);
 
 const PORT = process.env.PORT || 5000;
 

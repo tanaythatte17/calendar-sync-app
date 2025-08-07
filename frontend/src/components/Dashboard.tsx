@@ -7,6 +7,8 @@ import 'react-calendar/dist/Calendar.css';
 import { FaGoogle, FaMicrosoft } from 'react-icons/fa';
 import { toZonedTime, format } from 'date-fns-tz';
 import moment from 'moment-timezone';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -132,6 +134,15 @@ const Dashboard: React.FC = () => {
   const [tzSaveStatus, setTzSaveStatus] = useState<string | null>(null);
   const [selectedCalendars, setSelectedCalendars] = useState<{ [calendarId: string]: boolean }>({});
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  // Add state for selected calendars per account for event creation
+  const [selectedAccountsForEvent, setSelectedAccountsForEvent] = useState<string[]>([]);
+  const [selectedCalendarsForEvent, setSelectedCalendarsForEvent] = useState<{ [accountId: string]: string[] }>({});
+  // Add state for calendar selection error
+  const [calendarSelectionError, setCalendarSelectionError] = useState('');
+  // Add state for allDay and recurrence
+  const [isAllDay, setIsAllDay] = useState(false);
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrence, setRecurrence] = useState({ frequency: 'daily', interval: 1, count: '', until: '', byDay: [] });
 
   useEffect(() => {
     // Only set if the timezone exists in the dropdown
@@ -235,24 +246,53 @@ const Dashboard: React.FC = () => {
   };
 
   const handleAddEvent = async () => {
+    // Check if at least one calendar is selected
+    let atLeastOne = false;
+    for (const accountId of selectedAccountsForEvent) {
+      if ((selectedCalendarsForEvent[accountId] || []).length > 0) {
+        atLeastOne = true;
+        break;
+      }
+    }
+    if (!atLeastOne) {
+      setCalendarSelectionError('Please select at least one calendar.');
+      return;
+    }
+    setCalendarSelectionError('');
     try {
       const eventData = {
         title: newEvent.title,
         description: newEvent.description,
         location: newEvent.location,
-        start: {
-          dateTime: newEvent.startDateTime,
-          timeZone: 'UTC' // Default to UTC for new events
-        },
-        end: {
-          dateTime: newEvent.endDateTime,
-          timeZone: 'UTC' // Default to UTC for new events
-        },
-        calendarAccountId: newEvent.calendarAccountId,
-        attendees: newEvent.attendees.map(email => ({ email, name: email }))
+        startDateTime: newEvent.startDateTime,
+        endDateTime: newEvent.endDateTime,
+        attendees: newEvent.attendees.map(email => ({ email, name: email })),
+        isAllDay,
+        recurrence: isRecurring ? {
+          frequency: recurrence.frequency,
+          interval: recurrence.interval,
+          count: recurrence.count ? Number(recurrence.count) : undefined,
+          until: recurrence.until || undefined,
+          byDay: recurrence.byDay,
+        } : null,
       };
-      const response = await api.post(`${API_URL}/user/events`, eventData);
-      setEvents([...events, response.data]);
+      // For each selected account and calendar, create event
+      let createdEvents: any[] = [];
+      for (const accountId of selectedAccountsForEvent) {
+        const calendarIds = selectedCalendarsForEvent[accountId] || [];
+        const account = accounts.find(a => a.id === accountId);
+        if (!account) continue;
+        for (const calendarId of calendarIds) {
+          const payload = {
+            ...eventData,
+            calendarId,
+            provider: account.provider,
+          };
+          const response = await api.post(`${API_URL}/calendar/events`, payload);
+          createdEvents.push(response.data.event);
+        }
+      }
+      setEvents([...events, ...createdEvents]);
       setIsAddEventModalOpen(false);
       setNewEvent({
         title: '',
@@ -263,6 +303,8 @@ const Dashboard: React.FC = () => {
         calendarAccountId: '',
         attendees: []
       });
+      setSelectedAccountsForEvent([]);
+      setSelectedCalendarsForEvent({});
     } catch (err) {
       setError('Failed to create event');
     }
@@ -699,7 +741,7 @@ const Dashboard: React.FC = () => {
                     title={`${event.title} - ${
                       event.isAllDay 
                         ? 'All day' 
-                        : `${format(toZonedTime(new Date(event.start.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')} - ${format(toZonedTime(new Date(event.end.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')}`
+                        : `${format(toZonedTime(new Date(event.start.dateTime), (selectedUserTimeZone ?? user?.timezone ?? 'UTC') || ''), 'HH:mm')} - ${format(toZonedTime(new Date(event.end.dateTime), (selectedUserTimeZone ?? user?.timezone ?? 'UTC') || ''), 'HH:mm')}`
                     }`}
                   >
                     <div
@@ -719,8 +761,8 @@ const Dashboard: React.FC = () => {
                     </div>
                     {!event.isAllDay && height > 50 && (
                       <div className="text-xs text-gray-600 mt-1">
-                        {format(toZonedTime(new Date(event.start.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')} - 
-                        {format(toZonedTime(new Date(event.end.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')}
+                        {format(toZonedTime(new Date(event.start.dateTime), String(selectedUserTimeZone || user?.timezone || 'UTC')), 'HH:mm')} - 
+                        {format(toZonedTime(new Date(event.end.dateTime), String(selectedUserTimeZone || user?.timezone || 'UTC')), 'HH:mm')}
                       </div>
                     )}
                     {!event.isAllDay && event.description && height > 70 && (
@@ -774,12 +816,12 @@ const Dashboard: React.FC = () => {
                 </svg>
               </button>
             </div>
-            <div className="mb-2 text-sm text-gray-700">{selectedEvent.description}</div>
+            <div className="mb-2 text-sm text-gray-700">{selectedEvent.description ?? ''}</div>
             <div className="mb-2 text-sm">
               <span className="font-semibold">Time:</span>{' '}
               {selectedEvent.isAllDay
                 ? 'All day'
-                : `${format(toZonedTime(new Date(selectedEvent.start.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')} - ${format(toZonedTime(new Date(selectedEvent.end.dateTime), selectedUserTimeZone || user?.timezone || 'UTC'), 'HH:mm')}`}
+                : `${format(toZonedTime(new Date(selectedEvent.start.dateTime), String(selectedUserTimeZone || user?.timezone || 'UTC')), 'HH:mm')} - ${format(toZonedTime(new Date(selectedEvent.end.dateTime), String(selectedUserTimeZone || user?.timezone || 'UTC')), 'HH:mm')}`}
             </div>
             <div className="mb-2 text-sm">
               <span className="font-semibold">Calendar:</span> {getCalendarName(selectedEvent.calendarId)}
@@ -794,8 +836,8 @@ const Dashboard: React.FC = () => {
                 <span className="font-semibold">Attendees:</span>
                 <div className="flex flex-wrap gap-2 mt-1">
                   {selectedEvent.attendees.map((a, i) => (
-                    <span key={a.email || a.name || i} className="bg-gray-100 px-2 py-1 rounded text-xs">
-                      {a.name || a.email}
+                    <span key={(a.email ?? a.name ?? i).toString()} className="bg-gray-100 px-2 py-1 rounded text-xs">
+                      {(a.name ?? a.email ?? '').toString()}
                     </span>
                   ))}
                 </div>
@@ -841,7 +883,7 @@ const Dashboard: React.FC = () => {
                   type="text"
                   value={newEvent.title}
                   onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
                   placeholder="Enter event title"
                   required
                 />
@@ -849,26 +891,83 @@ const Dashboard: React.FC = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Start Date & Time *</label>
-                  <input
-                    type="datetime-local"
-                    value={newEvent.startDateTime}
-                    onChange={(e) => setNewEvent({ ...newEvent, startDateTime: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-                    required
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Start {isAllDay ? 'Date' : 'Date & Time'} *</label>
+                  <DatePicker
+                    selected={newEvent.startDateTime ? new Date(newEvent.startDateTime) : null}
+                    onChange={date => setNewEvent({ ...newEvent, startDateTime: date ? date.toISOString() : '' })}
+                    showTimeSelect={!isAllDay}
+                    timeIntervals={15}
+                    dateFormat={isAllDay ? 'yyyy-MM-dd' : 'yyyy-MM-dd h:mm aa'}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
+                    placeholderText={isAllDay ? 'Select date' : 'Select date and time'}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">End Date & Time *</label>
-                  <input
-                    type="datetime-local"
-                    value={newEvent.endDateTime}
-                    onChange={(e) => setNewEvent({ ...newEvent, endDateTime: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-                    required
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">End {isAllDay ? 'Date' : 'Date & Time'} *</label>
+                  <DatePicker
+                    selected={newEvent.endDateTime ? new Date(newEvent.endDateTime) : null}
+                    onChange={date => setNewEvent({ ...newEvent, endDateTime: date ? date.toISOString() : '' })}
+                    showTimeSelect={!isAllDay}
+                    timeIntervals={15}
+                    dateFormat={isAllDay ? 'yyyy-MM-dd' : 'yyyy-MM-dd h:mm aa'}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
+                    placeholderText={isAllDay ? 'Select date' : 'Select date and time'}
                   />
                 </div>
               </div>
+              <div className="flex items-center gap-4 mt-2">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={isAllDay} onChange={e => setIsAllDay(e.target.checked)} className="accent-blue-600" />
+                  <span className="text-sm">All Day</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} className="accent-blue-600" />
+                  <span className="text-sm">Recurring</span>
+                </label>
+              </div>
+              {isRecurring && (
+                <div className="mt-4 space-y-2 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                  <div className="flex gap-4 items-center">
+                    <label className="text-sm font-semibold text-gray-700">Frequency:</label>
+                    <select value={recurrence.frequency} onChange={e => setRecurrence(r => ({ ...r, frequency: e.target.value }))} className="bg-white border border-gray-300 rounded px-2 py-1">
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                    <label className="text-sm font-semibold text-gray-700 ml-4">Interval:</label>
+                    <input type="number" min={1} value={recurrence.interval} onChange={e => setRecurrence(r => ({ ...r, interval: Number(e.target.value) }))} className="w-16 bg-white border border-gray-300 rounded px-2 py-1" />
+                  </div>
+                  {recurrence.frequency === 'weekly' && (
+                    <div className="flex gap-2 items-center">
+                      <label className="text-sm font-semibold text-gray-700">Days:</label>
+                      {["MO","TU","WE","TH","FR","SA","SU"].map(day => (
+                        <label key={day} className="flex items-center gap-1">
+                          <input type="checkbox" checked={recurrence.byDay.includes(day)} onChange={e => setRecurrence(r => ({ ...r, byDay: e.target.checked ? [...r.byDay, day] : r.byDay.filter(d => d !== day) }))} />
+                          <span className="text-xs">{day}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-4 items-center">
+                    <label className="text-sm font-semibold text-gray-700">End:</label>
+                    <label className="flex items-center gap-1">
+                      <input type="radio" checked={recurrence.count !== ''} onChange={() => setRecurrence(r => ({ ...r, count: '1', until: '' }))} />
+                      <span className="text-xs">After</span>
+                      <input type="number" min={1} value={recurrence.count} onChange={e => setRecurrence(r => ({ ...r, count: e.target.value, until: '' }))} className="w-16 bg-white border border-gray-300 rounded px-2 py-1" disabled={recurrence.count === ''} />
+                      <span className="text-xs">occurrences</span>
+                    </label>
+                    <label className="flex items-center gap-1 ml-4">
+                      <input type="radio" checked={recurrence.until !== ''} onChange={() => setRecurrence(r => ({ ...r, until: new Date().toISOString().slice(0,10), count: '' }))} />
+                      <span className="text-xs">Until</span>
+                      <input type="date" value={recurrence.until} onChange={e => setRecurrence(r => ({ ...r, until: e.target.value, count: '' }))} className="bg-white border border-gray-300 rounded px-2 py-1" disabled={recurrence.until === ''} />
+                    </label>
+                    <label className="flex items-center gap-1 ml-4">
+                      <input type="radio" checked={recurrence.count === '' && recurrence.until === ''} onChange={() => setRecurrence(r => ({ ...r, count: '', until: '' }))} />
+                      <span className="text-xs">No End</span>
+                    </label>
+                  </div>
+                </div>
+              )}
               
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Location</label>
@@ -876,7 +975,7 @@ const Dashboard: React.FC = () => {
                   type="text"
                   value={newEvent.location}
                   onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
                   placeholder="Enter event location"
                 />
               </div>
@@ -886,32 +985,211 @@ const Dashboard: React.FC = () => {
                 <textarea
                   value={newEvent.description}
                   onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
                   rows={4}
                   placeholder="Enter event description"
                 />
               </div>
               
+              {/* Enhanced Calendar Account & Calendar Selection with Debug Info */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Calendar Account *</label>
-                <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-200">
-                  {accounts.filter(acc => acc.isConnected).map((account) => (
-                    <label key={account.id} className="flex items-center space-x-3 p-3 hover:bg-white rounded-lg transition-colors cursor-pointer">
-                      <input
-                        type="radio"
-                        name="calendarAccount"
-                        checked={newEvent.calendarAccountId === account.id}
-                        onChange={() => setNewEvent({ ...newEvent, calendarAccountId: account.id })}
-                        className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-                        required
-                      />
-                      <span className="text-sm font-medium text-gray-700">
-                        {account.email} ({account.provider})
-                      </span>
-                    </label>
-                  ))}
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                Select Calendar(s) to Create Event *
+              </label>
+
+              {accounts.length === 0 ? (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                  <div className="flex items-center">
+                    <svg className="w-5 h-5 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-red-700 text-sm">
+                      <strong>No accounts found!</strong>
+                    </span>
+                  </div>
                 </div>
+              ) : (
+                <div className="space-y-4 bg-gray-50 p-4 rounded-xl border border-gray-200 max-h-80 overflow-y-auto">
+                  {accounts
+                    .filter(acc => acc.calendarList && acc.calendarList.length > 0)
+                    .map((account) => {
+                      const accountId = account.id || `${account.provider}-${account.email}`;
+
+                      return (
+                        <div key={accountId} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center space-x-3">
+                              {account.provider === 'google' ? (
+                                <FaGoogle className="text-red-500 w-5 h-5" />
+                              ) : (
+                                <FaMicrosoft className="text-blue-700 w-5 h-5" />
+                              )}
+                              <div>
+                                <p className="font-semibold text-gray-800 text-sm" title={account.email}>
+                                  {account.email}
+                                </p>
+                                <p className="text-xs text-gray-500 capitalize">
+                                  {account.provider} Calendar
+                                </p>
+                              </div>
+                            </div>
+
+                            <label className="flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedAccountsForEvent.includes(accountId)}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setSelectedAccountsForEvent(prev => [...prev, accountId]);
+                                    if (!selectedCalendarsForEvent[accountId] &&
+                                        Array.isArray(account.calendarList) &&
+                                        account.calendarList.length > 0) {
+                                      setSelectedCalendarsForEvent(prev => ({
+                                        ...prev,
+                                        [accountId]: [account.calendarList[0].calendarId]
+                                      }));
+                                    }
+                                  } else {
+                                    setSelectedAccountsForEvent(prev => prev.filter(id => id !== accountId));
+                                    setSelectedCalendarsForEvent(prev => {
+                                      const copy = { ...prev };
+                                      delete copy[accountId];
+                                      return copy;
+                                    });
+                                  }
+                                }}
+                                className="w-4 h-4 text-blue-600 focus:ring-blue-500 bg-white rounded"
+                              />
+                              <span className="ml-2 text-sm font-medium text-gray-700">Select Account</span>
+                            </label>
+                          </div>
+
+                          {selectedAccountsForEvent.includes(accountId) && (
+                            <div className="border-t border-gray-100 pt-3">
+                              <p className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wider">
+                                Available Calendars:
+                              </p>
+
+                              {Array.isArray(account.calendarList) && account.calendarList.length > 0 ? (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {account.calendarList.map(cal => (
+                                    <label
+                                      key={cal.calendarId}
+                                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold cursor-pointer transition-all hover:scale-105 hover:shadow-md"
+                                      style={{
+                                        backgroundColor: cal.color || '#e0e7ff',
+                                        color: '#222',
+                                        border: '2px solid transparent',
+                                        borderColor: selectedCalendarsForEvent[accountId]?.includes(cal.calendarId)
+                                          ? '#3b82f6'
+                                          : 'transparent'
+                                      }}
+                                      title={`Calendar ID: ${cal.calendarId}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedCalendarsForEvent[accountId]?.includes(cal.calendarId) || false}
+                                        onChange={e => {
+                                          setSelectedCalendarsForEvent(prev => {
+                                            const prevCals = prev[accountId] || [];
+                                            if (e.target.checked) {
+                                              return { ...prev, [accountId]: [...prevCals, cal.calendarId] };
+                                            } else {
+                                              return { ...prev, [accountId]: prevCals.filter(id => id !== cal.calendarId) };
+                                            }
+                                          });
+                                        }}
+                                        className="accent-blue-600 bg-white rounded"
+                                      />
+                                      <span className="truncate flex-1">{cal.name}</span>
+                                      <div
+                                        className="w-3 h-3 rounded-full border border-gray-400"
+                                        style={{ backgroundColor: cal.color || '#e0e7ff' }}
+                                      />
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-center py-3 text-gray-500 text-sm bg-gray-100 rounded-lg">
+                                  <p>No calendars available</p>
+                                </div>
+                              )}
+
+                              {selectedCalendarsForEvent[accountId] &&
+                                selectedCalendarsForEvent[accountId].length > 0 && (
+                                  <div className="mt-2 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-md inline-block">
+                                    {selectedCalendarsForEvent[accountId].length} calendar(s) selected
+                                  </div>
+                                )}
+                            </div>
+                          )}
+
+                          {!selectedAccountsForEvent.includes(accountId) && (
+                            <div className="border-t border-gray-100 pt-3">
+                              <p className="text-xs text-gray-500 italic text-center py-2">
+                                Select this account to view and choose calendars
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                  {accounts.filter(acc => acc.calendarList && acc.calendarList.length > 0).length === 0 && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                      <div className="flex items-center">
+                        <svg className="w-5 h-5 text-yellow-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                        <div className="text-yellow-700 text-sm">
+                          <p><strong>No calendar data found!</strong></p>
+                          <p>You have {accounts.length} account(s) but none have calendar data loaded.</p>
+                          <p className="text-xs mt-1">Try syncing your accounts first.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedAccountsForEvent.length > 0 && (
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <h4 className="text-sm font-semibold text-blue-800 mb-2">Selection Summary:</h4>
+                      <ul className="text-xs text-blue-700 space-y-1">
+                        {selectedAccountsForEvent.map(accountId => {
+                          const account = accounts.find(a =>
+                            (a.id === accountId) || (`${a.provider}-${a.email}` === accountId)
+                          );
+                          const selectedCals = selectedCalendarsForEvent[accountId] || [];
+                          return (
+                            <li key={accountId} className="flex items-center justify-between">
+                              <span className="font-medium">{account?.email} ({account?.provider}):</span>
+                              <span className="bg-blue-200 px-2 py-1 rounded text-xs">
+                                {selectedCals.length} calendar(s)
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {calendarSelectionError && (
+                <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center">
+                    <svg className="w-4 h-4 text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-red-700 text-sm">{calendarSelectionError}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-2 text-xs text-gray-500">
+                <p>💡 <strong>Tip:</strong> Select the accounts and calendars where you want to create this event. The event will be created in all selected calendars.</p>
               </div>
+            </div>
+
               
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Attendees</label>
@@ -921,7 +1199,7 @@ const Dashboard: React.FC = () => {
                       type="email"
                       value={attendeeEmail}
                       onChange={(e) => setAttendeeEmail(e.target.value)}
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
                       placeholder="Enter attendee email"
                     />
                     <button
@@ -970,6 +1248,7 @@ const Dashboard: React.FC = () => {
                 <button
                   type="submit"
                   className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold"
+                  disabled={!selectedAccountsForEvent.some(accountId => (selectedCalendarsForEvent[accountId] || []).length > 0)}
                 >
                   Create Event
                 </button>
