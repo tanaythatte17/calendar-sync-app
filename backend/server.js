@@ -8,6 +8,7 @@ import authRoutes from './routes/authRoutes.js'
 import connectToDB from "./db/connectDB.js";
 import userRoutes from "./routes/userRoutes.js";
 import calendarRoutes from './routes/calendarRoutes.js';
+import googleWebhookRoutes from './routes/googleWebhookRoutes.js';
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ app.use('/api/google', googleRoutes);
 app.use('/api/microsoft', microsoftRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/webhook/google', googleWebhookRoutes);
 
 const PORT = process.env.PORT || 5000;
 

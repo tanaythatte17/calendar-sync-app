@@ -17,7 +17,22 @@ const CalendarAccountSchema = new mongoose.Schema({
     deltaLink: { type: String },                  // For Microsoft calendars
     color: { type: String },                      // UI color (Google: from calendar.colorId, Microsoft: custom if needed)
   }],
-  calendarListSyncToken : { type: String}
+  calendarListSyncToken : { type: String},
+  webhookChannels: {
+    calendarList: {
+      channelId: String,
+      resourceId: String,
+      expiration: Date
+    },
+    events: [{
+      calendarId: String,
+      calendarName: String,
+      channelId: String,
+      resourceId: String,
+      expiration: Date
+    }]
+  },
+  webhookSetupAt: { type: Date },
 });
 
 const calendarAccount = mongoose.model("calendarAccount", CalendarAccountSchema);
