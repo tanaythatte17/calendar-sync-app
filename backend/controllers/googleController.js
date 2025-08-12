@@ -301,6 +301,11 @@ export const createGoogleNotifications = async (userId, userEmail) => {
       
       try {
         console.log(`Creating event notification channel for: ${calendarEntry.name} (${calendarEntry.calendarId})`);
+
+        const payload = {
+          userId: userId.toString(),
+          calendarId: calendarEntry.calendarId,
+        };
         
         const eventChannel = await calendar.events.watch({
           calendarId: calendarEntry.calendarId,
@@ -308,14 +313,7 @@ export const createGoogleNotifications = async (userId, userEmail) => {
             id: eventChannelId,
             type: 'web_hook',
             address: `${process.env.WEBHOOK_BASE_URL}/webhook/google/events`,
-            token: JSON.stringify({ 
-              userId: userId.toString(), 
-              email: userEmail, 
-              calendarId: calendarEntry.calendarId,
-              calendarName: calendarEntry.name,
-              type: 'events',
-              accountId: account._id.toString()
-            }),
+            token:Buffer.from(JSON.stringify(payload)).toString('base64'),
             expiration: expirationTime
           }
         });
@@ -627,93 +625,123 @@ async function processBatchEvents(events, accountId, calendarId) {
   }
 }
 
-export async function updateGoogleCalendarList(calendar, calendarAccount) {
-  let pageToken = null;
-  let syncToken = calendarAccount.calendarListSyncToken;
-  let calendarsToUpdate = [];
+export async function updateGoogleCalendarList(account) {
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+
+  // Refresh token if expired
+  if (account.expiresAt && account.expiresAt < new Date()) {
+    const tokens = await refreshCalendarAccessToken(
+      account._id,
+      account.refreshToken,
+      'https://oauth2.googleapis.com/token',
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
+    account.accessToken = tokens.accessToken;
+  }
+
+  oauth2Client.setCredentials({
+    access_token: account.accessToken,
+    refresh_token: account.refreshToken,
+  });
+
+  const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+
+  const previousCalendars = account.calendarList || [];
+  const previousMap = new Map(previousCalendars.map((c) => [c.calendarId, c]));
+
+  let fetchedCalendars = [];
+  let nextSyncToken = null;
 
   try {
-    do {
-      const params = {
-        maxResults: 250,
-        showHidden: true,
-        minAccessRole: "owner",
-        showDeleted: true,
-      };
+    if (account.calendarListSyncToken) {
+      // Incremental sync
+      const res = await calendar.calendarList.list({
+        syncToken: account.calendarListSyncToken,
+      });
 
-      if (syncToken) {
-        params.syncToken = syncToken;
-      }
+      fetchedCalendars = res.data.items || [];
+      nextSyncToken = res.data.nextSyncToken;
 
-      if (pageToken) {
-        params.pageToken = pageToken;
-      }
+      const updatedMap = new Map();
+      const removedCalendarIds = [];
 
-      const result = await calendar.calendarList.list(params);
-      const items = result.data.items || [];
-      calendarsToUpdate = calendarsToUpdate.concat(items);
-      pageToken = result.data.nextPageToken;
-
-      // If nextSyncToken is present, save it
-      if (result.data.nextSyncToken) {
-        calendarAccount.calendarListSyncToken = result.data.nextSyncToken;
-        await calendarAccount.save();
-      }
-
-    } while (pageToken);
-
-    // Step 1: Update calendar list in DB
-    for (const calendarItem of calendarsToUpdate) {
-      if (calendarItem.deleted) {
-        await CalendarAccount.updateOne(
-          { _id: calendarAccount._id },
-          { $pull: { calendarList: { id: calendarItem.id } } }
-        );
-        console.log(`Removed calendar ${calendarItem.summary} (${calendarItem.id})`);
-      } else {
-        await CalendarAccount.updateOne(
-          { _id: calendarAccount._id, "calendarList.id": calendarItem.id },
-          {
-            $set: {
-              "calendarList.$.summary": calendarItem.summary,
-              "calendarList.$.primary": calendarItem.primary || false,
-              "calendarList.$.accessRole": calendarItem.accessRole,
-            }
-          },
-          { upsert: false }
-        );
-
-        // If calendar not found, push new one
-        const found = calendarAccount.calendarList.find(c => c.id === calendarItem.id);
-        if (!found) {
-          await CalendarAccount.updateOne(
-            { _id: calendarAccount._id },
-            {
-              $push: {
-                calendarList: {
-                  id: calendarItem.id,
-                  summary: calendarItem.summary,
-                  primary: calendarItem.primary || false,
-                  accessRole: calendarItem.accessRole,
-                  syncToken: null, // Initial syncToken null
-                }
-              }
-            }
-          );
-          console.log(`Added new calendar: ${calendarItem.summary} (${calendarItem.id})`);
+      for (const c of fetchedCalendars) {
+        if (c.deleted) {
+          removedCalendarIds.push(c.id);
+        } else {
+          const existing = previousMap.get(c.id);
+          updatedMap.set(c.id, {
+            calendarId: c.id,
+            name: c.summary,
+            syncToken: existing?.syncToken || null,
+            deltaLink: existing?.deltaLink || null,
+            color: c.backgroundColor || null,
+          });
         }
       }
-    }
 
-  } catch (err) {
-    // If syncToken is invalid, fall back to full calendar list fetch
-    if (err.code === 410 || (err.response && err.response.status === 410)) {
-      console.warn("Sync token expired or invalid. Performing full fetch.");
-      calendarAccount.calendarListSyncToken = null;
-      await calendarAccount.save();
-      await updateGoogleCalendarList(calendar, calendarAccount); // Retry full
+      const newCalendarList = [];
+      for (const [id, cal] of previousMap) {
+        if (!removedCalendarIds.includes(id)) {
+          newCalendarList.push(updatedMap.get(id) || cal);
+        }
+      }
+
+      if (removedCalendarIds.length > 0) {
+        await Event.deleteMany({
+          calendarAccountId: account._id,
+          calendarId: { $in: removedCalendarIds },
+        });
+      }
+
+      account.calendarList = newCalendarList;
+      account.calendarListSyncToken = nextSyncToken;
+      await account.save();
     } else {
-      console.error("Error updating calendar list:", err);
+      // Full sync
+      const res = await calendar.calendarList.list();
+      const calendarList = res.data.items || [];
+      nextSyncToken = res.data.nextSyncToken;
+
+      const currentIds = new Set(calendarList.map((c) => c.id));
+      const previousIds = new Set(previousCalendars.map((c) => c.calendarId));
+      const removedCalendarIds = [...previousIds].filter((id) => !currentIds.has(id));
+
+      const updatedList = calendarList.map((c) => {
+        const existing = previousMap.get(c.id);
+        return {
+          calendarId: c.id,
+          name: c.summary,
+          syncToken: existing?.syncToken || null,
+          deltaLink: existing?.deltaLink || null,
+          color: c.backgroundColor || null,
+        };
+      });
+
+      if (removedCalendarIds.length > 0) {
+        await Event.deleteMany({
+          calendarAccountId: account._id,
+          calendarId: { $in: removedCalendarIds },
+        });
+      }
+
+      account.calendarList = updatedList;
+      account.calendarListSyncToken = nextSyncToken;
+      await account.save();
+    }
+  } catch (err) {
+    // Sync token expired or invalid — fallback to full sync
+    if (err.errors?.[0]?.reason === "fullSyncRequired") {
+      console.warn("Sync token expired. Performing full sync...");
+      account.calendarListSyncToken = null;
+      await updateGoogleCalendarList(account); // Recursive call with full sync
+    } else {
+      throw err;
     }
   }
 }

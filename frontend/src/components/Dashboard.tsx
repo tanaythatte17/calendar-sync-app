@@ -143,6 +143,7 @@ const Dashboard: React.FC = () => {
   const [isAllDay, setIsAllDay] = useState(false);
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrence, setRecurrence] = useState({ frequency: 'daily', interval: 1, count: '', until: '', byDay: [] });
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   useEffect(() => {
     // Only set if the timezone exists in the dropdown
@@ -220,6 +221,28 @@ const Dashboard: React.FC = () => {
       navigate('/login');
     } catch (err) {
       setError('Failed to logout');
+    }
+  };
+
+  const handleDeleteAccount = async (accountId: string) => {
+    console.log(`Deleting calendar account: ${accountId}`);
+    if (!confirm('Are you sure you want to delete this calendar account? This will remove all synced events from this account.')) {
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      await api.delete(`${API_URL}/calendarAccount/delete/${accountId}`);
+      // Remove the deleted account from state
+      setAccounts(accounts.filter(acc => acc.id !== accountId));
+      // Remove events from the deleted account
+      setEvents(events.filter(event => event.calendarAccountId !== accountId));
+      setOpenMenuId(null);
+      alert('Calendar account deleted successfully');
+    } catch (err) {
+      setError('Failed to delete calendar account');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -441,7 +464,7 @@ const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50" onClick={() => setOpenMenuId(null)}>
       {/* Loading overlay spinner */}
       {loading && (
         <div className="fixed inset-0 bg-black bg-opacity-20 flex items-center justify-center z-50">
@@ -554,48 +577,61 @@ const Dashboard: React.FC = () => {
                   key={account.id}
                   className="flex flex-col gap-2 p-4 border border-blue-100 rounded-xl hover:bg-blue-50 transition-all duration-200"
                 >
-                  <div className="flex items-center gap-3 w-full">
-                    {account.provider === 'google' ? (
-                      <FaGoogle className="text-red-500 w-5 h-5 shrink-0" />
-                    ) : (
-                      <FaMicrosoft className="text-blue-700 w-5 h-5 shrink-0" />
-                    )}
-                    <div className="min-w-0">
-                      <p
-                        className="font-semibold text-gray-800 text-sm sm:text-base truncate max-w-[170px] sm:max-w-[220px]"
-                        title={account.email}
-                      >
-                        {account.email}
-                      </p>
-                      <p className="text-xs text-gray-500 capitalize truncate max-w-[170px] sm:max-w-[220px]" title={account.provider}>
-                        {account.provider}
-                      </p>
+                  <div className="flex items-center justify-between gap-3 w-full">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      {account.provider === 'google' ? (
+                        <FaGoogle className="text-red-500 w-5 h-5 shrink-0" />
+                      ) : (
+                        <FaMicrosoft className="text-blue-700 w-5 h-5 shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className="font-semibold text-gray-800 text-sm sm:text-base truncate"
+                          title={account.email}
+                        >
+                          {account.email}
+                        </p>
+                        <p className="text-xs text-gray-500 capitalize truncate" title={account.provider}>
+                          {account.provider}
+                        </p>
+                      </div>
                     </div>
-                    <button
-                      className="ml-auto px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all text-xs font-semibold flex items-center gap-1"
-                      onClick={async () => {
-                        setLoading(true);
-                        setError('');
-                        try {
-                          const syncUrl = `${API_URL}/${account.provider}/sync/${account.provider}?email=${encodeURIComponent(account.email)}`;
-                          await api.get(syncUrl);
-                          setError('');
-                          alert(`${account.provider.charAt(0).toUpperCase() + account.provider.slice(1)} calendar synced!`);
-                          await fetchData(); // Refresh events and accounts after sync
-                        } catch (err) {
-                          setError(`Failed to sync ${account.provider} calendar`);
-                        } finally {
-                          setLoading(false);
-                        }
-                      }}
-                      disabled={loading}
-                      title={`Sync ${account.provider} calendar`}
-                    >
-                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582M20 20v-5h-.581M5 9A7 7 0 0119 15.197M19 15A7 7 0 015 8.803" />
-                      </svg>
-                      Sync
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Three dots menu */}
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            console.log("Clicked account:", account);
+                            setOpenMenuId(openMenuId === account.id ? null : account.id);
+                          }}
+                          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+                          title="More options"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v.01M12 12v.01M12 19v.01" />
+                          </svg>
+                        </button>
+
+                        {openMenuId === account.id && (
+                          <div 
+                            className="absolute right-0 top-full mt-2 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-20"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+
+                            <button
+                              onClick={() => handleDeleteAccount(account._id)}
+                              className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 rounded-lg transition-all flex items-center gap-2"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                              Delete Account
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   {/* Render calendarList if present */}
                   {account.calendarList && account.calendarList.length > 0 && (
