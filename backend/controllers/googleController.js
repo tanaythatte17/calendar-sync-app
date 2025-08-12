@@ -10,6 +10,7 @@ import { refreshCalendarAccessToken } from "../utils/refreshToken.js";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from 'uuid';
 import cookieParser from "cookie-parser";
+import { scheduleRenewal } from "../utils/agendaUtils.js";
 
 const router = express.Router();
 
@@ -293,6 +294,15 @@ export const createGoogleNotifications = async (userId, userEmail) => {
 
     console.log(`✅ Created calendar list notification channel: ${calendarListChannelId}`);
 
+    await scheduleRenewal(
+      expirationTime,
+      account._id.toString(),
+      "calendar-list",
+      null, // no calendarId for list
+      calendarListChannelId,
+      calendarListChannel.data.resourceId
+    );
+
     // Create notification channels for each calendar's events (add/delete/update events)
     const eventChannels = [];
     
@@ -327,6 +337,15 @@ export const createGoogleNotifications = async (userId, userEmail) => {
         });
 
         console.log(`✅ Created event notification channel for ${calendarEntry.name}: ${eventChannelId}`);
+
+        await scheduleRenewal(
+          expirationTime,
+          account._id.toString(),
+          "events",
+          calendarEntry.calendarId,
+          eventChannelId,
+          eventChannel.data.resourceId
+        );
         
       } catch (err) {
         console.error(`❌ Failed to create event channel for calendar ${calendarEntry.name}:`, err.message);
@@ -357,6 +376,54 @@ export const createGoogleNotifications = async (userId, userEmail) => {
     throw err;
   }
 };
+
+export async function renewNotification(accountId, channelType, calendarId, oldChannelId, resourceId) {
+  const account = await calendarAccount.findById(accountId);
+  if (!account) {
+    console.error(`Account ${accountId} not found`);
+    return;
+  }
+
+  // 1️⃣ Stop existing channel
+  const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+  await calendar.channels.stop({
+    requestBody: {
+      id: oldChannelId,
+      resourceId: resourceId,
+    },
+  });
+
+  console.log(`🛑 Stopped old ${channelType} channel: ${oldChannelId}`);
+
+  // 2️⃣ Create new channel (simplified — you can reuse your createGoogleNotifications logic here)
+  const newChannelId = uuidv4();
+  const expirationTime = Date.now() + (3 * 24 * 60 * 60 * 1000); // 3 days from now
+
+  if (channelType === "calendar-list") {
+    await calendar.calendarList.watch({
+      requestBody: {
+        id: newChannelId,
+        type: "web_hook",
+        address: `${process.env.WEBHOOK_BASE_URL}/webhook/google/list`,
+        token: JSON.stringify({ accountId }),
+        expiration: expirationTime
+      }
+    });
+  } else if (channelType === "events") {
+    await calendar.events.watch({
+      calendarId,
+      requestBody: {
+        id: newChannelId,
+        type: "web_hook",
+        address: `${process.env.WEBHOOK_BASE_URL}/webhook/google/events`,
+        token: JSON.stringify({ accountId, calendarId }),
+        expiration: expirationTime
+      }
+    });
+  }
+
+  console.log(`✅ Created new ${channelType} channel: ${newChannelId}`);
+}
 
 // Optimized full sync with smart recurring event handling
 async function performFullSync(calendar, calendarId, accountId) {

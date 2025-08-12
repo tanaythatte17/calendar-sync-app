@@ -10,6 +10,7 @@ import userRoutes from "./routes/userRoutes.js";
 import calendarRoutes from './routes/calendarRoutes.js';
 import googleWebhookRoutes from './routes/googleWebhookRoutes.js';
 import calendarAccountRoutes from './routes/calendarAccountRoutes.js';
+import agenda from './utils/agendaUtils.js';
 
 dotenv.config();
 
@@ -36,5 +37,8 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   connectToDB();
+  (async () => {
+    await agenda.start();
+  })();
   console.log(`Server running on port ${PORT}`);
 }); 

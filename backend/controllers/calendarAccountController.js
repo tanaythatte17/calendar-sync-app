@@ -30,7 +30,7 @@ export async function deleteCalendarAccount(req, res) {
     }
 
     // 2️⃣ Delete all events for this account
-    await Event.deleteMany({ accountId });
+    await Event.deleteMany({ calendarAccountId: accountId });
 
     // 3️⃣ Delete the account
     await calendarAccount.deleteOne({ _id: accountId });
