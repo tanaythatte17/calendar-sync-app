@@ -1,9 +1,11 @@
 import Agenda from "agenda";
 import { renewNotification } from "../controllers/googleController.js";
+import dotenv from "dotenv";
 
+dotenv.config();
 // Initialize Agenda
 const agenda = new Agenda({
-  db: { address: process.env.MONGO_URI, collection: "agendaJobs" },
+  db: { address: process.env.MONGODB_URI, collection: "agendaJobs" },
 });
 
 agenda.define("renewNotification", async (job) => {

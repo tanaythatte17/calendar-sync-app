@@ -620,6 +620,31 @@ const Dashboard: React.FC = () => {
                           >
 
                             <button
+                              onClick={async () => {
+                                setLoading(true);
+                                setError('');
+                                try {
+                                  const syncUrl = `${API_URL}/${account.provider}/sync/${account.provider}?email=${encodeURIComponent(account.email)}`;
+                                  await api.get(syncUrl);
+                                  setError('');
+                                  alert(`${account.provider.charAt(0).toUpperCase() + account.provider.slice(1)} calendar synced!`);
+                                  await fetchData(); // Refresh events and accounts after sync
+                                } catch (err) {
+                                  setError(`Failed to sync ${account.provider} calendar`);
+                                } finally {
+                                  setLoading(false);
+                                  setOpenMenuId(null); // close menu after sync
+                                }
+                              }}
+                              className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-all flex items-center gap-2"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582M20 20v-5h-.581M5 9A7 7 0 0119 15.197M19 15A7 7 0 015 8.803" />
+                              </svg>
+                              Sync Calendar
+                            </button>
+
+                            <button
                               onClick={() => handleDeleteAccount(account._id)}
                               className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 rounded-lg transition-all flex items-center gap-2"
                             >
