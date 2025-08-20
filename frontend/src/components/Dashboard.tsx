@@ -21,6 +21,7 @@ interface CalendarListItem {
 
 interface CalendarAccount {
   id: string;
+  _id?: string;
   provider: 'google' | 'microsoft';
   email: string;
   isConnected: boolean;
@@ -303,7 +304,11 @@ const Dashboard: React.FC = () => {
       let createdEvents: any[] = [];
       for (const accountId of selectedAccountsForEvent) {
         const calendarIds = selectedCalendarsForEvent[accountId] || [];
-        const account = accounts.find(a => a.id === accountId);
+        const account = accounts.find(a =>
+          a.id === accountId ||
+          a._id === accountId ||
+          `${a.provider}-${a.email}` === accountId
+        );
         if (!account) continue;
         for (const calendarId of calendarIds) {
           const payload = {
@@ -314,6 +319,10 @@ const Dashboard: React.FC = () => {
           const response = await api.post(`${API_URL}/calendar/events`, payload);
           createdEvents.push(response.data.event);
         }
+      }
+      if (createdEvents.length === 0) {
+        setError('Could not create event. Please ensure you selected a valid account and calendar.');
+        return;
       }
       setEvents([...events, ...createdEvents]);
       setIsAddEventModalOpen(false);
@@ -391,7 +400,6 @@ const Dashboard: React.FC = () => {
     dayStart.setHours(0, 0, 0, 0);
     
     sorted.forEach(ev => {
-      // Handle all-day events
       if (ev.isAllDay) {
         positionedEvents.push({ 
           event: ev, 
@@ -403,41 +411,25 @@ const Dashboard: React.FC = () => {
         return;
       }
 
-      // Convert event times to the selected timezone
-      const eventStart = toZonedTime(new Date(ev.start.dateTime), currentTz);
-      const eventEnd = toZonedTime(new Date(ev.end.dateTime), currentTz);
-      
-      // Create timezone-aware day boundaries
-      const dayStartInTz = toZonedTime(dayStart, currentTz);
-      const dayEndInTz = new Date(dayStartInTz);
-      dayEndInTz.setHours(23, 59, 59, 999);
-      
-      // Calculate start and end times relative to the day start
-      let displayStart = eventStart;
-      let displayEnd = eventEnd;
-      
-      // Clamp events that start before or end after the current day
-      if (eventStart < dayStartInTz) {
-        displayStart = dayStartInTz;
-      }
-      if (eventEnd > dayEndInTz) {
-        displayEnd = dayEndInTz;
-      }
-      
-      // Skip events that don't overlap with this day
-      if (eventEnd <= dayStartInTz || eventStart >= dayEndInTz) {
-        return;
-      }
-      
-      // Calculate minutes from day start
-      const minutesFromStart = (displayStart.getTime() - dayStartInTz.getTime()) / (1000 * 60);
-      const minutesToEnd = (displayEnd.getTime() - dayStartInTz.getTime()) / (1000 * 60);
+      const startTz = toZonedTime(new Date(ev.start.dateTime), currentTz);
+      const endTz = toZonedTime(new Date(ev.end.dateTime), currentTz);
+      const startDayStr = format(startTz, 'yyyy-MM-dd');
+      const endDayStr = format(endTz, 'yyyy-MM-dd');
 
-      // Convert to pixels (60px per hour = 1px per minute)
-      const pixelsPerMinute = 60 / 60; // 1px per minute
-      const top = Math.max(0, minutesFromStart * pixelsPerMinute);
-      const height = Math.max(32, (minutesToEnd - minutesFromStart) * pixelsPerMinute);
-      
+      // skip if no overlap with selected day
+      if (endDayStr < startDayStr || startDayStr > startDayStr) return;
+
+      const startMin = startTz.getHours() * 60 + startTz.getMinutes();
+      const endMin = endTz.getHours() * 60 + endTz.getMinutes();
+
+      const displayStartMin = startDayStr < startDayStr ? 0 : Math.max(0, Math.min(1440, startMin));
+      const displayEndMin = endDayStr > startDayStr ? 1439 : Math.max(0, Math.min(1440, endMin));
+      if (displayEndMin <= displayStartMin) return;
+
+      const pixelsPerMinute = 1;
+      const top = displayStartMin * pixelsPerMinute;
+      const height = Math.max(32, (displayEndMin - displayStartMin) * pixelsPerMinute);
+
       // Find appropriate lane for this event
       let laneIdx = 0;
       while (lanes[laneIdx] && lanes[laneIdx].some(laneEv => {

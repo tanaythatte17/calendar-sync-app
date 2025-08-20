@@ -14,8 +14,10 @@ const oauth2Client = new google.auth.OAuth2(
 
 // POST /api/calendar/events - Create event in user's calendar
 export const createCalendarEvent = async (req, res) => {
+  console.log('Request body:', req.body);
   try {
     const userId = req.user?._id;
+    console.log('Body is ', req.body);
     const {
       title,
       description,
@@ -31,10 +33,40 @@ export const createCalendarEvent = async (req, res) => {
       reminders = []
     } = req.body;
 
-    // Validation
-    if (!userId || !title || !startDateTime || !endDateTime || !calendarId || !provider) {
+    // Handle all-day events: automatically set endDateTime to day after startDateTime
+    let finalStartDateTime, finalEndDateTime;
+    
+    if (isAllDay) {
+      // For all-day events, only startDateTime is required
+      if (!startDateTime) {
+        return res.status(400).json({ 
+          error: "Missing required field: startDateTime" 
+        });
+      }
+      
+      // Set start date and automatically calculate end date (next day)
+      const startDate = new Date(startDateTime);
+      const endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 1);
+      
+      finalStartDateTime = startDate.toISOString();
+      finalEndDateTime = endDate.toISOString();
+    } else {
+      // For regular events, both start and end are required
+      if (!startDateTime || !endDateTime) {
+        return res.status(400).json({ 
+          error: "Missing required fields: startDateTime and endDateTime are required for non-all-day events" 
+        });
+      }
+      
+      finalStartDateTime = startDateTime;
+      finalEndDateTime = endDateTime;
+    }
+
+    // Basic validation for remaining required fields
+    if (!userId || !title || !calendarId || !provider) {
       return res.status(400).json({ 
-        error: "Missing required fields: title, startDateTime, endDateTime, calendarId, provider" 
+        error: "Missing required fields: title, calendarId, provider" 
       });
     }
 
@@ -60,8 +92,8 @@ export const createCalendarEvent = async (req, res) => {
       createdEvent = await createGoogleEvent(account, {
         title,
         description,
-        startDateTime,
-        endDateTime,
+        startDateTime: finalStartDateTime,
+        endDateTime: finalEndDateTime,
         timeZone,
         location,
         attendees,
@@ -74,8 +106,8 @@ export const createCalendarEvent = async (req, res) => {
       createdEvent = await createMicrosoftEvent(account, {
         title,
         description,
-        startDateTime,
-        endDateTime,
+        startDateTime: finalStartDateTime,
+        endDateTime: finalEndDateTime,
         timeZone,
         location,
         attendees,
@@ -96,11 +128,11 @@ export const createCalendarEvent = async (req, res) => {
       description: description,
       location: location,
       start: {
-        dateTime: new Date(startDateTime),
+        dateTime: new Date(finalStartDateTime),
         timeZone: timeZone,
       },
       end: {
-        dateTime: new Date(endDateTime),
+        dateTime: new Date(finalEndDateTime),
         timeZone: timeZone,
       },
       isAllDay: isAllDay,
@@ -245,6 +277,7 @@ async function createGoogleEvent(account, eventData) {
 
 // Create event in Microsoft Calendar
 async function createMicrosoftEvent(account, eventData) {
+  console.log('Creating Microsoft event with data:', eventData);
   const {
     title,
     description,
@@ -270,37 +303,50 @@ async function createMicrosoftEvent(account, eventData) {
     body: {
       contentType: 'HTML',
       content: description || ''
-    },
-    start: isAllDay 
-      ? { 
-          dateTime: new Date(startDateTime).toISOString().split('T')[0] + 'T00:00:00.0000000',
-          timeZone: timeZone 
-        }
-      : { 
-          dateTime: new Date(startDateTime).toISOString(),
-          timeZone: timeZone 
-        },
-    end: isAllDay 
-      ? { 
-          dateTime: new Date(endDateTime).toISOString().split('T')[0] + 'T23:59:59.0000000',
-          timeZone: timeZone 
-        }
-      : { 
-          dateTime: new Date(endDateTime).toISOString(),
-          timeZone: timeZone 
-        },
-    location: location ? {
+    }
+  };
+
+  // Handle start/end times based on isAllDay flag
+  if (isAllDay) {
+    // For all-day events - Microsoft uses dateTime with date string and timeZone
+    microsoftEvent.start = {
+      dateTime: new Date(startDateTime).toISOString().split('T')[0],
+      timeZone: timeZone
+    };
+    microsoftEvent.end = {
+      dateTime: new Date(endDateTime).toISOString().split('T')[0],
+      timeZone: timeZone
+    };
+    microsoftEvent.isAllDay = true;
+  } else {
+    // For regular events, use dateTime format with full ISO string
+    microsoftEvent.start = {
+      dateTime: new Date(startDateTime).toISOString(),
+      timeZone: timeZone
+    };
+    microsoftEvent.end = {
+      dateTime: new Date(endDateTime).toISOString(),
+      timeZone: timeZone
+    };
+  }
+
+  // Add location only if provided
+  if (location) {
+    microsoftEvent.location = {
       displayName: location
-    } : null,
-    attendees: attendees.map(a => ({
+    };
+  }
+
+  // Add attendees only if provided
+  if (attendees && attendees.length > 0) {
+    microsoftEvent.attendees = attendees.map(a => ({
       emailAddress: {
         address: a.email,
         name: a.name
       },
       type: 'required'
-    })),
-    isAllDay: isAllDay
-  };
+    }));
+  }
 
   // Add recurrence if specified
   if (recurrence) {
@@ -309,21 +355,36 @@ async function createMicrosoftEvent(account, eventData) {
 
   // Add reminders if specified
   if (reminders && reminders.length > 0) {
-    microsoftEvent.reminderMinutesBeforeStart = reminders[0].minutes; // Microsoft supports one default reminder
+    microsoftEvent.reminderMinutesBeforeStart = reminders[0].minutes;
   }
 
-  // Create the event
-  const url = calendarId === 'primary' 
-    ? 'https://graph.microsoft.com/v1.0/me/events'
-    : `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events`;
+  console.log('Prepared Microsoft event object:', JSON.stringify(microsoftEvent, null, 2));
 
-  const response = await axios.post(url, microsoftEvent, { headers });
+  try {
+    // Create the event - keep same endpoint as regular events work fine
+    const url = `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events`;
+    console.log('Making request to URL:', url);
 
-  return {
-    id: response.data.id,
-    htmlLink: response.data.webLink,
-    ...response.data
-  };
+    const response = await axios.post(url, microsoftEvent, { headers });
+
+    console.log('Microsoft event created successfully:', response.data.id);
+    return {
+      id: response.data.id,
+      htmlLink: response.data.webLink,
+      ...response.data
+    };
+
+  } catch (error) {
+    console.error('Microsoft Graph API Error Details:');
+    console.error('Status:', error.response?.status);
+    console.error('Status Text:', error.response?.statusText);
+    console.error('Error Data:', JSON.stringify(error.response?.data, null, 2));
+    console.error('Request Headers:', headers);
+    console.error('Request Body:', JSON.stringify(microsoftEvent, null, 2));
+    
+    // Re-throw with more context
+    throw new Error(`Microsoft Graph API Error: ${error.response?.status} - ${JSON.stringify(error.response?.data)}`);
+  }
 }
 
 // Helper function to format Google recurrence rule

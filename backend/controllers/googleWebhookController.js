@@ -13,10 +13,11 @@ export const googleEventsWebhookHandler = async (req, res) => {
     }
 
     let calendarId, accountId;
-   try {
+    try {
         const decodedPayload = JSON.parse(
             Buffer.from(tokenHeader, "base64").toString("utf8")
         );
+        console.log("Decoded payload:", decodedPayload);
         calendarId = decodedPayload.calendarId;
         accountId = decodedPayload.accountId;
     } catch (e) {
@@ -26,7 +27,7 @@ export const googleEventsWebhookHandler = async (req, res) => {
 
     if (!calendarId || !accountId) {
         console.error("Missing calendarId or accountId in token");
-      return res.status(400).send("Missing calendarId or accountId in token");
+        return res.status(400).send("Missing calendarId or accountId in token");
     }
 
     // 🔐 1. Fetch calendar account and refresh token

@@ -40,7 +40,7 @@ export const connectGoogle = async (req, res) => {
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: [
-      'https://www.googleapis.com/auth/calendar.readonly',
+      'https://www.googleapis.com/auth/calendar',
       'https://www.googleapis.com/auth/userinfo.email',
     ],
     prompt: 'consent',
@@ -315,6 +315,7 @@ export const createGoogleNotifications = async (userId, userEmail) => {
         const payload = {
           userId: userId.toString(),
           calendarId: calendarEntry.calendarId,
+          accountId: account._id.toString(),
         };
         
         const eventChannel = await calendar.events.watch({

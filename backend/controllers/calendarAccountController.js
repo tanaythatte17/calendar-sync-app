@@ -1,5 +1,6 @@
 import calendarAccount from "../models/calendarAccountModel.js";
 import Event from "../models/eventModel.js";
+import User from "../models/userModel.js";
 import axios from "axios";
 
 /**
@@ -34,6 +35,11 @@ export async function deleteCalendarAccount(req, res) {
 
     // 3️⃣ Delete the account
     await calendarAccount.deleteOne({ _id: accountId });
+
+    await User.updateOne(
+      { _id: req.user._id },
+      { $pull: { calendarAccounts: accountId } }
+    );
 
     return res.status(200).json({ message: `Deleted calendar account ${accountId}` });
 

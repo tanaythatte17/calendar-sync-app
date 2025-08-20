@@ -7,6 +7,7 @@ import User from "../models/userModel.js";
 import Event from "../models/eventModel.js";
 import jwt from "jsonwebtoken";
 import { refreshCalendarAccessToken } from "../utils/refreshToken.js";
+import { scheduleMicrosoftRenewal } from '../utils/agendaUtils.js';
 import moment from "moment-timezone";
 import { findIana } from "windows-iana";
 
@@ -167,41 +168,10 @@ export const syncMicrosoft = async (req, res) => {
 
     const headers = { Authorization: `Bearer ${account.accessToken}` };
 
-    // 1. Fetch all calendars
-    const calendarsRes = await axios.get('https://graph.microsoft.com/v1.0/me/calendars', { headers });
-    const calendars = calendarsRes.data.value || [];
+    // 1. Update calendar list (extracted into function)
+    await updateMicrosoftCalendarList(account, headers);
 
-    // 2. Update calendar list
-    const previousCalendars = account.calendarList || [];
-    const previousCalendarMap = new Map(previousCalendars.map(c => [c.calendarId, c]));
-
-    const updatedCalendarList = calendars.map(cal => {
-      const existing = previousCalendarMap.get(cal.id);
-      return {
-        calendarId: cal.id,
-        name: cal.name,
-        color: cal.color || null,
-        deltaLink: existing?.deltaLink || null,
-      };
-    });
-
-    // Remove deleted calendars' events
-    const currentCalendarIds = new Set(calendars.map(c => c.id));
-    const previousCalendarIds = new Set(previousCalendars.map(c => c.calendarId));
-    const removedCalendarIds = [...previousCalendarIds].filter(id => !currentCalendarIds.has(id));
-    
-    if (removedCalendarIds.length > 0) {
-      await Event.deleteMany({
-        calendarAccountId: account._id,
-        calendarId: { $in: removedCalendarIds },
-        source: 'microsoft',
-      });
-    }
-
-    account.calendarList = updatedCalendarList;
-    await account.save();
-
-    // 3. Define time range for recurring events (2 years back, 2 years forward)
+    // 2. Define time range for recurring events (2 years back, 2 years forward)
     const now = new Date();
     const startDate = new Date(now);
     startDate.setFullYear(startDate.getFullYear() - 2);
@@ -212,92 +182,48 @@ export const syncMicrosoft = async (req, res) => {
 
     let totalEvents = 0;
 
-    // 4. Sync events for each calendar
+    // 3. Sync events for each calendar using extracted full/incremental functions
     for (const calendarEntry of account.calendarList) {
       const calendarId = calendarEntry.calendarId;
       let deltaLink = calendarEntry.deltaLink;
-      let triedFullSync = false;
 
-      while (true) {
-        try {
-          if (!deltaLink) {
-            // FULL SYNC: Use calendarView to get expanded recurring events
-            console.log(`Full sync for calendar ${calendarId}`);
-            const expandedEvents = await fetchExpandedEvents(calendarId, startTime, endTime, headers);
-            
-            // Get existing event IDs from database for this calendar
-            const existingEvents = await Event.find({
-              calendarAccountId: account._id,
-              calendarId: calendarId,
-              source: 'microsoft'
-            }).select('externalId');
-            
-            const existingEventIds = new Set(existingEvents.map(e => e.externalId));
-            const newEventIds = new Set(expandedEvents.map(e => e.id));
-            
-            // Delete events that no longer exist
-            const eventsToDelete = [...existingEventIds].filter(id => !newEventIds.has(id));
-            if (eventsToDelete.length > 0) {
-              await Event.deleteMany({
-                calendarAccountId: account._id,
-                calendarId: calendarId,
-                source: 'microsoft',
-                externalId: { $in: eventsToDelete }
-              });
-            }
-
-            // Process all expanded events
-            await processEvents(expandedEvents, account._id, calendarId);
-            totalEvents += expandedEvents.length;
-
-            // Get delta link for future incremental syncs
-            const deltaRes = await axios.get(
-              `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events/delta`,
-              { headers }
-            );
-            calendarEntry.deltaLink = await getDeltaLink(deltaRes, headers);
-            
-          } else {
-            // INCREMENTAL SYNC: Use delta link
-            console.log(`Incremental sync for calendar ${calendarId}`);
-            const { events: changedEvents, newDeltaLink } = await fetchDeltaEvents(deltaLink, headers);
-            
-            // Track recurring series that were modified
-            const modifiedSeries = new Set();
-            
-            // Process changed/deleted events
-            for (const event of changedEvents) {
-              if (event["@removed"]) {
-                await handleEventDeletion(event, account._id, calendarId);
-              } else {
-                // For recurring events, we need to handle them specially
-                if (event.type === 'seriesMaster') {
-                  modifiedSeries.add(event.id);
-                  await handleRecurringEventUpdate(event, calendarId, startTime, endTime, headers, account._id);
-                } else {
-                  await processEvents([event], account._id, calendarId);
-                }
-              }
-            }
-            
-            // CRITICAL: Validate all recurring series for "delete this and following" scenarios
-            await validateAllRecurringSeries(account._id, calendarId, startTime, endTime, headers, modifiedSeries);
-            
-            totalEvents += changedEvents.length;
-            calendarEntry.deltaLink = newDeltaLink;
-          }
-          break;
-
-        } catch (err) {
-          if (err.response?.status === 410 && !triedFullSync) {
-            console.log(`Delta link expired for calendar ${calendarId}, falling back to full sync`);
-            calendarEntry.deltaLink = null;
-            deltaLink = null;
-            triedFullSync = true;
-            continue;
-          } else {
-            throw err;
-          }
+      try {
+        if (!deltaLink) {
+          const { eventsProcessed, newDeltaLink } = await performMicrosoftFullSync(
+            calendarId,
+            headers,
+            account._id,
+            startTime,
+            endTime
+          );
+          totalEvents += eventsProcessed;
+          calendarEntry.deltaLink = newDeltaLink;
+        } else {
+          const { eventsProcessed, newDeltaLink } = await performMicrosoftIncrementalSync(
+            calendarId,
+            deltaLink,
+            headers,
+            account._id,
+            startTime,
+            endTime
+          );
+          totalEvents += eventsProcessed;
+          calendarEntry.deltaLink = newDeltaLink;
+        }
+      } catch (err) {
+        if (err.response?.status === 410) {
+          console.log(`Delta link expired for calendar ${calendarId}, falling back to full sync`);
+          const { eventsProcessed, newDeltaLink } = await performMicrosoftFullSync(
+            calendarId,
+            headers,
+            account._id,
+            startTime,
+            endTime
+          );
+          totalEvents += eventsProcessed;
+          calendarEntry.deltaLink = newDeltaLink;
+        } else {
+          throw err;
         }
       }
     }
@@ -305,16 +231,375 @@ export const syncMicrosoft = async (req, res) => {
     account.lastSyncedAt = new Date();
     await account.save();
 
+    // STEP 5: Create Microsoft notifications
+    const notificationResult = await createMicrosoftNotifications(userId, userEmail);
+
     res.json({
-      message: "Microsoft calendar sync complete",
-      synced: totalEvents
+      message: "Microsoft calendar initial sync and notifications setup complete",
+      calendars: account.calendarList.length,
+      totalEventsProcessed: totalEvents,
+      notifications: {
+        calendarListSubscription: notificationResult.calendarListSubscription,
+        eventSubscriptions: notificationResult.eventSubscriptions
+      }
     });
 
   } catch (err) {
     console.error("Microsoft sync failed:", err.message || err);
-    res.status(500).send("Microsoft sync failed.");
+    res.status(500).json({ error: "Microsoft sync failed", details: err.message });
   }
 };
+
+export const createMicrosoftNotifications = async (userId, userEmail) => {
+  try {
+    console.log(`Creating Microsoft notifications for user ${userId}`);
+
+    const account = await calendarAccount.findOne({
+      userId: userId,
+      provider: 'microsoft',
+      email: userEmail,
+    });
+
+    if (!account) {
+      throw new Error("No linked Microsoft account found");
+    }
+
+    // Refresh token if needed
+    if (account.expiresAt && account.expiresAt < new Date()) {
+      const tokens = await refreshCalendarAccessToken(
+        account._id,
+        account.refreshToken,
+        'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        process.env.MICROSOFT_CLIENT_ID,
+        process.env.MICROSOFT_CLIENT_SECRET
+      );
+      account.accessToken = tokens.accessToken;
+    }
+
+    const headers = { 
+      Authorization: `Bearer ${account.accessToken}`,
+      'Content-Type': 'application/json'
+    };
+
+    // Microsoft Graph API allows subscriptions for up to 3 days maximum
+    const expirationDateTime = new Date();
+    expirationDateTime.setDate(expirationDateTime.getDate() + 3);
+    const expirationTime = expirationDateTime.getTime();
+
+    // Create subscription for calendar list changes (calendars being added/removed/updated)
+    console.log(`Creating calendar list notification subscription`);
+    
+    const calendarListPayload = {
+      changeType: 'updated,deleted',
+      notificationUrl: `${process.env.WEBHOOK_BASE_URL}/webhook/microsoft/list`,
+      resource: 'me/calendars',
+      expirationDateTime: expirationDateTime.toISOString(), // e.g. "2025-08-20T10:00:00.0000000Z"
+      clientState: Buffer.from(JSON.stringify({
+        userId: userId.toString(),
+        accountId: account._id.toString(),
+        type: 'calendar-list'
+      })).toString('base64').slice(0, 128) // Should stay within 128 char limit
+    };
+
+    const calendarListResponse = await axios.post(
+      'https://graph.microsoft.com/v1.0/subscriptions',
+      calendarListPayload,
+      { headers }
+    );
+
+    const calendarListSubscriptionId = calendarListResponse.data.id;
+    console.log(`✅ Created calendar list notification subscription: ${calendarListSubscriptionId}`);
+    console.log('Before scheduling Microsoft renewal');
+    await scheduleMicrosoftRenewal(
+      expirationTime,
+      account._id.toString(),
+      "calendar-list",
+      null, // no calendarId for list
+      calendarListSubscriptionId
+    );
+    console.log('After scheduling Microsoft renewal');
+
+    // Create notification subscriptions for each calendar's events
+    const eventSubscriptions = [];
+    
+    for (const calendarEntry of account.calendarList || []) {
+      try {
+        console.log(`Creating event notification subscription for: ${calendarEntry.name} (${calendarEntry.calendarId})`);
+
+        const eventPayload = {
+          changeType: 'created,updated,deleted',
+          notificationUrl: `${process.env.WEBHOOK_BASE_URL}/webhook/microsoft/events`,
+          resource: `me/calendars/${calendarEntry.calendarId}/events`,
+          expirationDateTime: expirationDateTime.toISOString(),
+          clientState: Buffer.from(JSON.stringify({
+            userId: userId.toString(),
+            calendarId: calendarEntry.calendarId,
+            accountId: account._id.toString()
+          })).toString('base64').slice(0, 128) // Should stay within 128 char limit
+        };
+
+        const eventResponse = await axios.post(
+          'https://graph.microsoft.com/v1.0/subscriptions',
+          eventPayload,
+          { headers }
+        );
+
+        eventSubscriptions.push({
+          subscriptionId: eventResponse.data.id,
+          calendarId: calendarEntry.calendarId,
+          calendarName: calendarEntry.name,
+          expiration: new Date(expirationTime)
+        });
+
+        console.log(`✅ Created event notification subscription for ${calendarEntry.name}: ${eventResponse.data.id}`);
+
+        await scheduleMicrosoftRenewal(
+          expirationTime,
+          account._id.toString(),
+          "events",
+          calendarEntry.calendarId,
+          eventResponse.data.id
+        );
+        
+      } catch (err) {
+        console.error(`❌ Failed to create event subscription for calendar ${calendarEntry.name}:`, err.response?.data || err.message);
+      }
+    }
+
+    // Store webhook info in account
+    account.webhookChannels = {
+      calendarList: {
+        channelId: calendarListSubscriptionId, // subscriptionId = channelId
+        resourceId: 'me/calendars',
+        expiration: new Date(expirationTime)
+      },
+      events: eventSubscriptions.map(e => ({
+        calendarId: e.calendarId,
+        calendarName: e.calendarName,
+        channelId: e.subscriptionId, // store under channelId
+        resourceId: `me/calendars/${e.calendarId}/events`,
+        expiration: e.expiration
+      }))
+    };
+    account.webhookSetupAt = new Date();
+    await account.save();
+
+    console.log(`✅ Notifications setup complete for user ${userId}: 1 calendar list + ${eventSubscriptions.length} event subscriptions`);
+    
+    return {
+      calendarListSubscription: calendarListSubscriptionId,
+      eventSubscriptions: eventSubscriptions.length
+    };
+
+  } catch (err) {
+    console.error('❌ Failed to create Microsoft notifications:', err.response?.data || err.message);
+    throw err;
+  }
+};
+
+export async function renewMicrosoftNotification(accountId, subscriptionType, calendarId, oldSubscriptionId) {
+  const account = await calendarAccount.findById(accountId);
+  if (!account) {
+    console.error(`Account ${accountId} not found`);
+    return;
+  }
+
+  // Refresh token if needed
+  if (account.expiresAt && account.expiresAt < new Date()) {
+    const tokens = await refreshCalendarAccessToken(
+      account._id,
+      account.refreshToken,
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      process.env.MICROSOFT_CLIENT_ID,
+      process.env.MICROSOFT_CLIENT_SECRET
+    );
+    account.accessToken = tokens.accessToken;
+  }
+
+  const headers = { 
+    Authorization: `Bearer ${account.accessToken}`,
+    'Content-Type': 'application/json'
+  };
+
+  // 1️⃣ Delete existing subscription
+  try {
+    await axios.delete(`https://graph.microsoft.com/v1.0/subscriptions/${oldSubscriptionId}`, { headers });
+    console.log(`🛑 Stopped old ${subscriptionType} subscription: ${oldSubscriptionId}`);
+  } catch (err) {
+    console.warn(`Failed to delete old subscription ${oldSubscriptionId}:`, err.message);
+  }
+
+  // 2️⃣ Create new subscription
+  const expirationDateTime = new Date();
+  expirationDateTime.setDate(expirationDateTime.getDate() + 3);
+  const expirationTime = expirationDateTime.getTime();
+
+  try {
+    if (subscriptionType === "calendar-list") {
+      const payload = {
+        changeType: 'created,updated,deleted',
+        notificationUrl: `${process.env.WEBHOOK_BASE_URL}/api/webhook/microsoft/list`,
+        resource: 'me/calendars',
+        expirationDateTime: expirationDateTime.toISOString(),
+        clientState: JSON.stringify({ accountId })
+      };
+
+      const response = await axios.post('https://graph.microsoft.com/v1.0/subscriptions', payload, { headers });
+      console.log(`✅ Created new ${subscriptionType} subscription: ${response.data.id}`);
+
+      // Update account with new subscription info
+      account.webhookSubscriptions.calendarList.subscriptionId = response.data.id;
+      account.webhookSubscriptions.calendarList.expiration = new Date(expirationTime);
+
+    } else if (subscriptionType === "events") {
+      const payload = {
+        changeType: 'created,updated,deleted',
+        notificationUrl: `${process.env.WEBHOOK_BASE_URL}/api/webhook/microsoft/events`,
+        resource: `me/calendars/${calendarId}/events`,
+        expirationDateTime: expirationDateTime.toISOString(),
+        clientState: JSON.stringify({ accountId, calendarId })
+      };
+
+      const response = await axios.post('https://graph.microsoft.com/v1.0/subscriptions', payload, { headers });
+      console.log(`✅ Created new ${subscriptionType} subscription: ${response.data.id}`);
+
+      // Update the specific event subscription
+      const eventSub = account.webhookSubscriptions.events.find(e => e.calendarId === calendarId);
+      if (eventSub) {
+        eventSub.subscriptionId = response.data.id;
+        eventSub.expiration = new Date(expirationTime);
+      }
+    }
+
+    await account.save();
+
+    // Schedule next renewal
+    await scheduleMicrosoftRenewal(
+      expirationTime,
+      accountId,
+      subscriptionType,
+      calendarId,
+      response.data.id
+    );
+
+  } catch (err) {
+    console.error(`Failed to create new ${subscriptionType} subscription:`, err.message);
+  }
+}
+
+// NEW: Update Microsoft calendar list (extracted from syncMicrosoft)
+export async function updateMicrosoftCalendarList(account, headers) {
+  // 1. Fetch all calendars
+  const calendarsRes = await axios.get('https://graph.microsoft.com/v1.0/me/calendars', { headers });
+  const calendars = calendarsRes.data.value || [];
+
+  // 2. Update calendar list
+  const previousCalendars = account.calendarList || [];
+  const previousCalendarMap = new Map(previousCalendars.map(c => [c.calendarId, c]));
+
+  const updatedCalendarList = calendars.map(cal => {
+    const existing = previousCalendarMap.get(cal.id);
+    return {
+      calendarId: cal.id,
+      name: cal.name,
+      color: cal.color || null,
+      deltaLink: existing?.deltaLink || null,
+    };
+  });
+
+  // Remove deleted calendars' events
+  const currentCalendarIds = new Set(calendars.map(c => c.id));
+  const previousCalendarIds = new Set(previousCalendars.map(c => c.calendarId));
+  const removedCalendarIds = [...previousCalendarIds].filter(id => !currentCalendarIds.has(id));
+  
+  if (removedCalendarIds.length > 0) {
+    await Event.deleteMany({
+      calendarAccountId: account._id,
+      calendarId: { $in: removedCalendarIds },
+      source: 'microsoft',
+    });
+  }
+
+  account.calendarList = updatedCalendarList;
+  await account.save();
+}
+
+// NEW: Full sync function (per calendar)
+export async function performMicrosoftFullSync(calendarId, headers, accountId, startTime, endTime) {
+  // FULL SYNC: Use calendarView to get expanded recurring events
+  console.log(`Full sync for calendar ${calendarId}`);
+  const expandedEvents = await fetchExpandedEvents(calendarId, startTime, endTime, headers);
+  
+  // Get existing event IDs from database for this calendar
+  const existingEvents = await Event.find({
+    calendarAccountId: accountId,
+    calendarId: calendarId,
+    source: 'microsoft'
+  }).select('externalId');
+  
+  const existingEventIds = new Set(existingEvents.map(e => e.externalId));
+  const newEventIds = new Set(expandedEvents.map(e => e.id));
+  
+  // Delete events that no longer exist
+  const eventsToDelete = [...existingEventIds].filter(id => !newEventIds.has(id));
+  if (eventsToDelete.length > 0) {
+    await Event.deleteMany({
+      calendarAccountId: accountId,
+      calendarId: calendarId,
+      source: 'microsoft',
+      externalId: { $in: eventsToDelete }
+    });
+  }
+
+  // Process all expanded events
+  await processEvents(expandedEvents, accountId, calendarId);
+  const eventsProcessed = expandedEvents.length;
+
+  // Get delta link for future incremental syncs
+  const deltaRes = await axios.get(
+    `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/calendarView/delta`,
+    {
+      headers,
+      params: {
+        startDateTime: startTime,
+        endDateTime: endTime,
+        $select: 'id,subject,bodyPreview,location,organizer,attendees,type,seriesMasterId,isAllDay,showAs,webLink,start,end'
+      }
+    }
+  );
+  const newDeltaLink = await getDeltaLink(deltaRes, headers);
+
+  return { eventsProcessed, newDeltaLink };
+}
+
+// NEW: Incremental sync function (per calendar)
+export async function performMicrosoftIncrementalSync(calendarId, deltaLink, headers, accountId, startTime, endTime) {
+  console.log(`Incremental sync for calendar ${calendarId}`);
+  const { events: changedEvents, newDeltaLink } = await fetchDeltaEvents(deltaLink, headers);
+  
+  // Track recurring series that were modified
+  const modifiedSeries = new Set();
+  
+  // Process changed/deleted events
+  for (const event of changedEvents) {
+    if (event["@removed"]) {
+      await handleEventDeletion(event, accountId, calendarId);
+    } else {
+      // For recurring events, we need to handle them specially
+      if (event.type === 'seriesMaster') {
+        modifiedSeries.add(event.id);
+        await handleRecurringEventUpdate(event, calendarId, startTime, endTime, headers, accountId);
+      } else {
+        await processEvents([event], accountId, calendarId);
+      }
+    }
+  }
+  
+  // Validate all recurring series for "delete this and following" scenarios
+  await validateAllRecurringSeries(accountId, calendarId, startTime, endTime, headers, modifiedSeries);
+
+  return { eventsProcessed: changedEvents.length, newDeltaLink };
+}
 
 // Helper function to fetch expanded events using calendarView
 async function fetchExpandedEvents(calendarId, startTime, endTime, headers) {
@@ -564,6 +849,7 @@ async function handleEventDeletion(removedEvent, accountId, calendarId) {
 
 // Helper function to process and save events
 async function processEvents(events, accountId, calendarId) {
+  console.log('Events are ', events);
   for (const event of events) {
     await Event.findOneAndUpdate(
       {

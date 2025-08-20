@@ -10,6 +10,7 @@ import userRoutes from "./routes/userRoutes.js";
 import calendarRoutes from './routes/calendarRoutes.js';
 import googleWebhookRoutes from './routes/googleWebhookRoutes.js';
 import calendarAccountRoutes from './routes/calendarAccountRoutes.js';
+import microsoftWebhookRoutes from './routes/microsoftWebhookRoutes.js';
 import agenda from './utils/agendaUtils.js';
 
 dotenv.config();
@@ -31,6 +32,7 @@ app.use('/api/microsoft', microsoftRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/webhook/google', googleWebhookRoutes);
+app.use('/api/webhook/microsoft', microsoftWebhookRoutes);
 app.use('/api/calendarAccount', calendarAccountRoutes);
 
 const PORT = process.env.PORT || 5000;
