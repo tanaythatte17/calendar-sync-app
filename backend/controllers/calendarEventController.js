@@ -14,7 +14,6 @@ const oauth2Client = new google.auth.OAuth2(
 
 // POST /api/calendar/events - Create event in user's calendar
 export const createCalendarEvent = async (req, res) => {
-  console.log('Request body:', req.body);
   try {
     const userId = req.user?._id;
     console.log('Body is ', req.body);
@@ -350,7 +349,10 @@ async function createMicrosoftEvent(account, eventData) {
 
   // Add recurrence if specified
   if (recurrence) {
-    microsoftEvent.recurrence = formatMicrosoftRecurrence(recurrence);
+    microsoftEvent.recurrence = formatMicrosoftRecurrence(
+      recurrence,
+      startDateTime  // 👈 pass the event start time
+    );
   }
 
   // Add reminders if specified
@@ -413,33 +415,73 @@ function formatGoogleRecurrence(recurrence) {
 }
 
 // Helper function to format Microsoft recurrence rule
-function formatMicrosoftRecurrence(recurrence) {
+function formatMicrosoftRecurrence(recurrence, eventStartDateTime) {
+  console.log('Recurrence is ', recurrence);
+  console.log('Event start date time is ', eventStartDateTime);
   const { frequency, interval = 1, count, until, byDay } = recurrence;
-  
+
   const pattern = {
     type: frequency.toLowerCase(), // daily, weekly, monthly, yearly
     interval: interval
   };
-  
-  if (byDay && byDay.length > 0) {
-    pattern.daysOfWeek = byDay.map(day => day.toLowerCase());
-  }
-  
-  const range = {
-    type: count ? 'numbered' : until ? 'endDate' : 'noEnd',
+
+  // Map abbreviated day names to full day names for Microsoft Graph
+  const dayMapping = {
+    'su': 'sunday',
+    'mo': 'monday',
+    'tu': 'tuesday',
+    'we': 'wednesday',
+    'th': 'thursday',
+    'fr': 'friday',
+    'sa': 'saturday'
   };
-  
+
+  if (byDay && byDay.length > 0) {
+    pattern.daysOfWeek = byDay.map(day => {
+      const lowerDay = day.toLowerCase();
+      return dayMapping[lowerDay] || lowerDay;
+    });
+  }
+
+  const range = {};
+  const MAX_END_DATE = "4500-09-01";
+  let startDate;
+  if (eventStartDateTime) {
+    const parsed = new Date(eventStartDateTime);
+    if (!isNaN(parsed.getTime())) {
+      startDate = parsed.toISOString().split("T")[0];
+    } else {
+      // fallback: assume it's already a YYYY-MM-DD string
+      startDate = eventStartDateTime.split("T")[0];
+    }
+  } else {
+    throw new Error("eventStartDateTime is required for recurrence");
+  } // ✅ required
+
   if (count) {
+    range.type = 'numbered';
+    range.startDate = startDate;
     range.numberOfOccurrences = count;
+  } else if (until) {
+    range.type = 'endDate';
+    range.startDate = startDate;
+    let endDate = new Date(until).toISOString().split("T")[0];
+    if (endDate > MAX_END_DATE) endDate = MAX_END_DATE;
+    range.endDate = endDate;
+  } else {
+    // Default: no explicit end, so set to 10 years from now but still capped
+    range.type = 'endDate';
+    range.startDate = startDate;
+    let endDate = new Date();
+    endDate.setFullYear(endDate.getFullYear() + 10);
+    let isoDate = endDate.toISOString().split("T")[0];
+    if (isoDate > MAX_END_DATE) isoDate = MAX_END_DATE;
+    range.endDate = isoDate;
   }
-  
-  if (until) {
-    range.endDate = new Date(until).toISOString().split('T')[0];
-  }
-  
+
   return {
-    pattern: pattern,
-    range: range
+    pattern,
+    range
   };
 }
 
