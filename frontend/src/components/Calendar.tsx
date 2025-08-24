@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
-import { toZonedTime } from 'date-fns-tz';
+import { formatInTimeZone } from 'date-fns-tz';
 import { FaChevronLeft, FaChevronRight, FaCalendar, FaList, FaCalendarWeek } from 'react-icons/fa';
 
 interface Event {
@@ -55,6 +55,16 @@ interface CalendarProps {
 
 type ViewMode = 'month' | 'week' | 'day';
 
+interface EventLayout {
+  event: Event;
+  startPosition: number;
+  endPosition: number;
+  column: number;
+  totalColumns: number;
+  width: number;
+  left: number;
+}
+
 const CalendarComponent: React.FC<CalendarProps> = ({
   selectedDate,
   onDateClick,
@@ -72,11 +82,168 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       if (event.calendarId && selectedCalendars && !selectedCalendars[event.calendarId]) {
         return false;
       }
+      
       const ianaTZ = selectedUserTimeZone || 'UTC';
-      const eventDate = toZonedTime(new Date(event.start.dateTime), ianaTZ);
-      return eventDate.toDateString() === date.toDateString();
+      
+      // Handle all-day events
+      if (event.isAllDay || event.start.isAllDay) {
+        // For all-day events, just compare the date part
+        const eventStartDate = new Date(event.start.dateTime);
+        const eventDateString = format(eventStartDate, 'yyyy-MM-dd');
+        const targetDateString = format(date, 'yyyy-MM-dd');
+        return eventDateString === targetDateString;
+      }
+      
+      // For timed events, convert to user timezone and compare dates
+      const eventStartInUserTZ = formatInTimeZone(
+        new Date(event.start.dateTime), 
+        ianaTZ, 
+        'yyyy-MM-dd'
+      );
+      const targetDateString = format(date, 'yyyy-MM-dd');
+      
+      return eventStartInUserTZ === targetDateString;
     });
     return filteredEvents;
+  };
+
+  const getEventHourInUserTimeZone = (event: Event) => {
+    const ianaTZ = selectedUserTimeZone || 'UTC';
+    
+    if (event.isAllDay || event.start.isAllDay) {
+      return -1; // Indicate all-day event
+    }
+    
+    const hourInUserTZ = parseInt(
+      formatInTimeZone(new Date(event.start.dateTime), ianaTZ, 'HH'), 
+      10
+    );
+    return hourInUserTZ;
+  };
+
+  const formatEventTimeInUserTimeZone = (dateTime: string, formatStr: string = 'HH:mm') => {
+    const ianaTZ = selectedUserTimeZone || 'UTC';
+    return formatInTimeZone(new Date(dateTime), ianaTZ, formatStr);
+  };
+
+  // Function to calculate event layouts with overlap handling
+  const calculateEventLayouts = (events: Event[]): EventLayout[] => {
+    if (events.length === 0) return [];
+
+    const ianaTZ = selectedUserTimeZone || 'UTC';
+    
+    // Convert events to layout objects with time positions
+    const eventData = events.map(event => {
+      const eventStart = new Date(event.start.dateTime);
+      const eventEnd = new Date(event.end.dateTime);
+      
+      const startHour = parseInt(formatInTimeZone(eventStart, ianaTZ, 'HH'), 10);
+      const startMinute = parseInt(formatInTimeZone(eventStart, ianaTZ, 'mm'), 10);
+      const endHour = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'HH'), 10);
+      const endMinute = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'mm'), 10);
+      
+      const startPosition = startHour * 80 + (startMinute / 60) * 80;
+      const endPosition = endHour * 80 + (endMinute / 60) * 80;
+      
+      return {
+        event,
+        startPosition,
+        endPosition,
+        column: 0,
+        totalColumns: 1,
+        width: 100,
+        left: 0
+      };
+    });
+
+    // Sort by start time
+    eventData.sort((a, b) => a.startPosition - b.startPosition);
+
+    // Group overlapping events
+    const groups: EventLayout[][] = [];
+    
+    for (const eventLayout of eventData) {
+      let placedInGroup = false;
+      
+      // Try to find an existing group where this event overlaps
+      for (const group of groups) {
+        const hasOverlap = group.some(existing => 
+          eventLayout.startPosition < existing.endPosition && 
+          eventLayout.endPosition > existing.startPosition
+        );
+        
+        if (hasOverlap) {
+          group.push(eventLayout);
+          placedInGroup = true;
+          break;
+        }
+      }
+      
+      // If no overlap found, create a new group
+      if (!placedInGroup) {
+        groups.push([eventLayout]);
+      }
+    }
+
+    // Calculate columns for each group
+    const layouts: EventLayout[] = [];
+    
+    for (const group of groups) {
+      if (group.length === 1) {
+        // Single event - takes full width
+        layouts.push({
+          ...group[0],
+          column: 0,
+          totalColumns: 1,
+          width: 100,
+          left: 0
+        });
+      } else {
+        // Multiple overlapping events - need to arrange in columns
+        const sortedGroup = group.sort((a, b) => a.startPosition - b.startPosition);
+        const columns: EventLayout[][] = [];
+        
+        for (const eventLayout of sortedGroup) {
+          let placedInColumn = false;
+          
+          // Try to place in existing column
+          for (let colIndex = 0; colIndex < columns.length; colIndex++) {
+            const column = columns[colIndex];
+            const canPlaceInColumn = !column.some(existing => 
+              eventLayout.startPosition < existing.endPosition && 
+              eventLayout.endPosition > existing.startPosition
+            );
+            
+            if (canPlaceInColumn) {
+              column.push(eventLayout);
+              eventLayout.column = colIndex;
+              placedInColumn = true;
+              break;
+            }
+          }
+          
+          // Create new column if needed
+          if (!placedInColumn) {
+            const newColumnIndex = columns.length;
+            columns.push([eventLayout]);
+            eventLayout.column = newColumnIndex;
+          }
+        }
+        
+        // Set layout properties
+        const totalColumns = columns.length;
+        const columnWidth = 100 / totalColumns;
+        
+        for (const eventLayout of group) {
+          eventLayout.totalColumns = totalColumns;
+          eventLayout.width = columnWidth;
+          eventLayout.left = eventLayout.column * columnWidth;
+          layouts.push(eventLayout);
+        }
+      }
+    }
+
+    return layouts;
   };
 
   const navigateDate = (direction: 'prev' | 'next') => {
@@ -136,17 +303,17 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       </div>
       
       <div className="p-6">
-                 <Calendar
-           onChange={(date) => {
-             // In month view, clicking a date should switch to day view
-             if (viewMode === 'month') {
-               setCurrentDate(date as Date);
-               setViewMode('day');
-             } else {
-               onDateClick(date as Date);
-             }
-           }}
-           value={currentDate}
+        <Calendar
+          onChange={(date) => {
+            // In month view, clicking a date should switch to day view
+            if (viewMode === 'month') {
+              setCurrentDate(date as Date);
+              setViewMode('day');
+            } else {
+              onDateClick(date as Date);
+            }
+          }}
+          value={currentDate}
           tileClassName={({ date }) => {
             const eventsForDate = getEventsForDate(date);
             const isSelected = isSameDay(date, selectedDate);
@@ -156,18 +323,17 @@ const CalendarComponent: React.FC<CalendarProps> = ({
               isSelected ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-gray-50',
             ].join(' ');
           }}
-
-                     tileContent={({ date }) => {
-             const eventsForDate = getEventsForDate(date);
-             return eventsForDate.length > 0 ? (
-               <div className="flex items-center justify-center mt-1">
-                 <div 
-                   className="w-2 h-2 bg-blue-500 rounded-full"
-                   title={`${eventsForDate.length} event${eventsForDate.length > 1 ? 's' : ''}`}
-                 />
-               </div>
-             ) : null;
-           }}
+          tileContent={({ date }) => {
+            const eventsForDate = getEventsForDate(date);
+            return eventsForDate.length > 0 ? (
+              <div className="flex items-center justify-center mt-1">
+                <div 
+                  className="w-2 h-2 bg-blue-500 rounded-full"
+                  title={`${eventsForDate.length} event${eventsForDate.length > 1 ? 's' : ''}`}
+                />
+              </div>
+            ) : null;
+          }}
           formatShortWeekday={(locale, date) => {
             return date.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1);
           }}
@@ -184,48 +350,48 @@ const CalendarComponent: React.FC<CalendarProps> = ({
 
   const renderWeekView = () => {
     const weekDays = getWeekDays();
-    const timeSlots = getTimeSlots();
+    const hourHeight = 60; // Height for each hour in pixels
 
     return (
       <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100">
-                     <div className="flex items-center justify-between">
-             <h2 className="text-2xl font-bold text-gray-900">
-               {format(weekDays[0], 'MMM d')} - {format(weekDays[6], 'MMM d, yyyy')}
-             </h2>
-             <div className="flex items-center gap-2">
-               <button
-                 onClick={() => setViewMode('month')}
-                 className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-all"
-               >
-                 ← Month View
-               </button>
-               <button
-                 onClick={() => navigateDate('prev')}
-                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
-               >
-                 <FaChevronLeft className="w-4 h-4" />
-               </button>
-               <button
-                 onClick={() => setCurrentDate(new Date())}
-                 className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-               >
-                 This Week
-               </button>
-               <button
-                 onClick={() => navigateDate('next')}
-                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
-               >
-                 <FaChevronRight className="w-4 h-4" />
-               </button>
-             </div>
-           </div>
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-gray-900">
+              {format(weekDays[0], 'MMM d')} - {format(weekDays[6], 'MMM d, yyyy')}
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode('month')}
+                className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-all"
+              >
+                ← Month View
+              </button>
+              <button
+                onClick={() => navigateDate('prev')}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
+              >
+                <FaChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setCurrentDate(new Date())}
+                className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+              >
+                This Week
+              </button>
+              <button
+                onClick={() => navigateDate('next')}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
+              >
+                <FaChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
         
         <div className="overflow-x-auto">
-          <div className="min-w-[800px]">
+          <div className="min-w-[800px] relative">
             {/* Header with day names */}
-            <div className="grid grid-cols-8 border-b border-gray-200">
+            <div className="grid grid-cols-8 border-b border-gray-200 relative z-20 bg-white">
               <div className="p-4 border-r border-gray-200 bg-gray-50"></div>
               {weekDays.map((day, index) => (
                 <div
@@ -246,38 +412,73 @@ const CalendarComponent: React.FC<CalendarProps> = ({
               ))}
             </div>
             
-            {/* Time slots */}
-            {timeSlots.map((time, timeIndex) => (
-              <div key={time} className="grid grid-cols-8 border-b border-gray-100">
-                <div className="p-2 text-xs text-gray-500 border-r border-gray-200 bg-gray-50">
-                  {time}
-                </div>
-                {weekDays.map((day, dayIndex) => {
-                  const dayEvents = getEventsForDate(day).filter(event => {
-                    if (event.isAllDay) return false;
-                    const eventHour = new Date(event.start.dateTime).getHours();
-                    return eventHour === timeIndex;
-                  });
-                  
-                  return (
-                    <div key={dayIndex} className="p-1 border-r border-gray-200 min-h-[60px]">
-                                             {dayEvents.map((event, eventIndex) => (
-                         <div
-                           key={eventIndex}
-                           className="text-xs p-1 bg-blue-100 text-blue-800 rounded mb-1 truncate cursor-pointer hover:bg-blue-200 transition-colors"
-                           title={event.title}
-                           onClick={() => {
-                             onEventClick(event);
-                           }}
-                         >
-                           {event.title}
-                         </div>
-                       ))}
+            {/* Time grid background */}
+            <div className="relative">
+              {Array.from({ length: 24 }, (_, hour) => (
+                <div key={hour} className="grid grid-cols-8 border-b border-gray-100" style={{ height: `${hourHeight}px` }}>
+                  <div className="p-2 text-xs text-gray-500 border-r border-gray-200 bg-gray-50">
+                    {`${hour.toString().padStart(2, '0')}:00`}
+                  </div>
+                  {weekDays.map((_, dayIndex) => (
+                    <div key={dayIndex} className="border-r border-gray-200 relative">
+                      {/* 30-minute marker */}
+                      <div className="absolute top-1/2 left-0 w-full border-t border-gray-100" style={{ opacity: 0.3 }}></div>
                     </div>
-                  );
-                })}
-              </div>
-            ))}
+                  ))}
+                </div>
+              ))}
+              
+              {/* Events positioned absolutely */}
+              {weekDays.map((day, dayIndex) => {
+                const dayEvents = getEventsForDate(day).filter(event => !(event.isAllDay || event.start.isAllDay));
+                const columnWidth = `calc((100% - ${100/8}%) / 7)`; // Account for time column
+                const leftOffset = `calc(${100/8}% + ${dayIndex} * ${columnWidth})`;
+                
+                return (
+                  <div key={dayIndex} className="absolute top-0" style={{ left: leftOffset, width: columnWidth }}>
+                    {dayEvents.map((event, eventIndex) => {
+                      const ianaTZ = selectedUserTimeZone || 'UTC';
+                      const eventStart = new Date(event.start.dateTime);
+                      const eventEnd = new Date(event.end.dateTime);
+                      
+                      // Convert to user timezone
+                      const startHour = parseInt(formatInTimeZone(eventStart, ianaTZ, 'HH'), 10);
+                      const startMinute = parseInt(formatInTimeZone(eventStart, ianaTZ, 'mm'), 10);
+                      const endHour = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'HH'), 10);
+                      const endMinute = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'mm'), 10);
+                      
+                      // Calculate position and height
+                      const startPosition = startHour * hourHeight + (startMinute / 60) * hourHeight;
+                      const endPosition = endHour * hourHeight + (endMinute / 60) * hourHeight;
+                      const height = Math.max(endPosition - startPosition, 30); // Minimum height of 30px
+                      
+                      return (
+                        <div
+                          key={eventIndex}
+                          className="absolute mx-1 p-1 bg-blue-100 text-blue-800 rounded text-xs cursor-pointer hover:bg-blue-200 transition-colors shadow-sm border border-blue-200"
+                          style={{
+                            top: `${startPosition}px`,
+                            height: `${height}px`,
+                            minHeight: '30px'
+                          }}
+                          title={`${event.title} - ${formatEventTimeInUserTimeZone(event.start.dateTime)} to ${formatEventTimeInUserTimeZone(event.end.dateTime)}`}
+                          onClick={() => {
+                            onEventClick(event);
+                          }}
+                        >
+                          <div className="font-medium truncate">{event.title}</div>
+                          {height > 40 && (
+                            <div className="text-xs opacity-80">
+                              {formatEventTimeInUserTimeZone(event.start.dateTime)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
@@ -285,78 +486,171 @@ const CalendarComponent: React.FC<CalendarProps> = ({
   };
 
   const renderDayView = () => {
-    const timeSlots = getTimeSlots();
     const dayEvents = getEventsForDate(currentDate);
+    const timedEvents = dayEvents.filter(event => !(event.isAllDay || event.start.isAllDay));
+    
+    // Calculate layouts for overlapping events
+    const eventLayouts = calculateEventLayouts(timedEvents);
 
     return (
       <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100">
-                     <div className="flex items-center justify-between">
-             <h2 className="text-2xl font-bold text-gray-900">
-               {format(currentDate, 'EEEE, MMMM d, yyyy')}
-             </h2>
-             <div className="flex items-center gap-2">
-               <button
-                 onClick={() => setViewMode('month')}
-                 className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-all"
-               >
-                 ← Month View
-               </button>
-               <button
-                 onClick={() => navigateDate('prev')}
-                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
-               >
-                 <FaChevronLeft className="w-4 h-4" />
-               </button>
-               <button
-                 onClick={() => setCurrentDate(new Date())}
-                 className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-               >
-                 Today
-               </button>
-               <button
-                 onClick={() => navigateDate('next')}
-                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
-               >
-                 <FaChevronRight className="w-4 h-4" />
-               </button>
-             </div>
-           </div>
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-gray-900">
+              {format(currentDate, 'EEEE, MMMM d, yyyy')}
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode('month')}
+                className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-all"
+              >
+                ← Month View
+              </button>
+              <button
+                onClick={() => navigateDate('prev')}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
+              >
+                <FaChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setCurrentDate(new Date())}
+                className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+              >
+                Today
+              </button>
+              <button
+                onClick={() => navigateDate('next')}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
+              >
+                <FaChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
         
         <div className="p-6">
-          <div className="space-y-4">
-            {timeSlots.map((time, index) => {
-              const hourEvents = dayEvents.filter(event => {
-                if (event.isAllDay) return false;
-                const eventHour = new Date(event.start.dateTime).getHours();
-                return eventHour === index;
-              });
-              
-              return (
-                <div key={time} className="flex">
-                  <div className="w-20 text-sm text-gray-500 font-medium pt-2">
-                    {time}
-                  </div>
-                  <div className="flex-1 border-l border-gray-200 pl-4 pt-2 min-h-[60px]">
-                                         {hourEvents.map((event, eventIndex) => (
-                                               <div
-                          key={eventIndex}
-                          className="mb-2 p-3 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors"
-                          onClick={() => {
-                            onEventClick(event);
-                          }}
-                        >
-                         <div className="font-medium text-blue-900">{event.title}</div>
-                         <div className="text-sm text-blue-700">
-                           {format(new Date(event.start.dateTime), 'HH:mm')} - {format(new Date(event.end.dateTime), 'HH:mm')}
-                         </div>
-                       </div>
-                     ))}
-                  </div>
+          {/* All-day events section */}
+          {dayEvents.some(event => event.isAllDay || event.start.isAllDay) && (
+            <div className="mb-6">
+              <h3 className="text-sm font-medium text-gray-500 mb-3">All Day</h3>
+              <div className="space-y-2">
+                {dayEvents
+                  .filter(event => event.isAllDay || event.start.isAllDay)
+                  .map((event, eventIndex) => (
+                    <div
+                      key={eventIndex}
+                      className="p-3 bg-green-50 border border-green-200 rounded-lg cursor-pointer hover:bg-green-100 transition-colors"
+                      onClick={() => {
+                        onEventClick(event);
+                      }}
+                    >
+                      <div className="font-medium text-green-900">{event.title}</div>
+                      {event.location && (
+                        <div className="text-sm text-green-700">{event.location}</div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Timed events - continuous timeline */}
+          <div className="relative">
+            {/* Hour markers */}
+            {Array.from({ length: 24 }, (_, hour) => (
+              <div key={hour} className="flex border-b border-gray-100 relative" style={{ height: '80px' }}>
+                <div className="w-20 text-sm text-gray-500 font-medium pt-2">
+                  {`${hour.toString().padStart(2, '0')}:00`}
                 </div>
-              );
-            })}
+                <div className="flex-1 border-l border-gray-200 relative">
+                  {/* 30-minute marker */}
+                  <div className="absolute left-0 w-full border-t border-gray-100" style={{ top: '40px', opacity: 0.5 }}></div>
+                  {/* 15-minute markers */}
+                  <div className="absolute left-0 w-4 border-t border-gray-200" style={{ top: '20px', opacity: 0.3 }}></div>
+                  <div className="absolute left-0 w-4 border-t border-gray-200" style={{ top: '60px', opacity: 0.3 }}></div>
+                </div>
+              </div>
+            ))}
+            
+            {/* Events positioned absolutely with overlap handling */}
+            <div className="absolute top-0 right-0" style={{ left: '80px' }}>
+              {eventLayouts.map((layout, layoutIndex) => {
+                const { event, startPosition, endPosition, width, left } = layout;
+                const actualHeight = endPosition - startPosition;
+                const displayHeight = Math.max(actualHeight, 30); // Minimum height for readability
+                
+                // Calculate duration in minutes for styling decisions
+                const eventStart = new Date(event.start.dateTime);
+                const eventEnd = new Date(event.end.dateTime);
+                const durationMinutes = (eventEnd.getTime() - eventStart.getTime()) / (1000 * 60);
+                const isShortEvent = durationMinutes <= 30;
+                
+                // Color variations for overlapping events
+                const colors = [
+                  { bg: 'bg-blue-50', border: 'border-blue-200', hover: 'hover:bg-blue-100', text: 'text-blue-900', textLight: 'text-blue-700', textLighter: 'text-blue-600' },
+                  { bg: 'bg-purple-50', border: 'border-purple-200', hover: 'hover:bg-purple-100', text: 'text-purple-900', textLight: 'text-purple-700', textLighter: 'text-purple-600' },
+                  { bg: 'bg-green-50', border: 'border-green-200', hover: 'hover:bg-green-100', text: 'text-green-900', textLight: 'text-green-700', textLighter: 'text-green-600' },
+                  { bg: 'bg-orange-50', border: 'border-orange-200', hover: 'hover:bg-orange-100', text: 'text-orange-900', textLight: 'text-orange-700', textLighter: 'text-orange-600' },
+                  { bg: 'bg-red-50', border: 'border-red-200', hover: 'hover:bg-red-100', text: 'text-red-900', textLight: 'text-red-700', textLighter: 'text-red-600' },
+                ];
+                
+                const colorScheme = layout.totalColumns > 1 ? colors[layout.column % colors.length] : colors[0];
+                
+                return (
+                  <div
+                    key={layoutIndex}
+                    className={`absolute p-2 rounded-lg cursor-pointer transition-all duration-200 z-10 shadow-sm ${
+                      isShortEvent 
+                        ? 'bg-yellow-50 border border-yellow-300 hover:bg-yellow-100' 
+                        : `${colorScheme.bg} border ${colorScheme.border} ${colorScheme.hover}`
+                    }`}
+                    style={{
+                      top: `${startPosition}px`,
+                      height: `${displayHeight}px`,
+                      minHeight: '30px',
+                      left: `${left}%`,
+                      width: `${width - 1}%`, // Subtract 1% for spacing between overlapping events
+                      marginRight: '1%'
+                    }}
+                    title={`${event.title} (${Math.round(durationMinutes)} min) - ${formatEventTimeInUserTimeZone(event.start.dateTime)} to ${formatEventTimeInUserTimeZone(event.end.dateTime)}`}
+                    onClick={() => {
+                      onEventClick(event);
+                    }}
+                  >
+                    <div className={`font-medium text-sm truncate ${
+                      isShortEvent ? 'text-yellow-900' : colorScheme.text
+                    }`}>
+                      {event.title}
+                    </div>
+                    <div className={`text-xs ${
+                      isShortEvent ? 'text-yellow-700' : colorScheme.textLight
+                    }`}>
+                      {formatEventTimeInUserTimeZone(event.start.dateTime)} - {formatEventTimeInUserTimeZone(event.end.dateTime)}
+                      {isShortEvent && ` (${Math.round(durationMinutes)}m)`}
+                    </div>
+                    {event.location && displayHeight > 50 && (
+                      <div className={`text-xs mt-1 truncate ${
+                        isShortEvent ? 'text-yellow-600' : colorScheme.textLighter
+                      }`}>
+                        {event.location}
+                      </div>
+                    )}
+                    {/* Visual indicator for actual vs display height */}
+                    {actualHeight < displayHeight && (
+                      <div 
+                        className={`absolute left-0 right-0 ${
+                          isShortEvent ? 'bg-yellow-300' : `${colorScheme.bg} opacity-40`
+                        } opacity-20`}
+                        style={{
+                          bottom: '0',
+                          height: `${actualHeight}px`
+                        }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
