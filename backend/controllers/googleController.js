@@ -116,7 +116,7 @@ export const googleCallback = async (req, res) => {
         { $push: { calendarAccounts: newCalendarAccount._id } },
         { new: true }
       );
-      return res.redirect('http://localhost:5173/dashboard');
+      return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
     }
     // Always ensure the account is in the user's calendarAccounts array
     await User.findByIdAndUpdate(
@@ -124,7 +124,7 @@ export const googleCallback = async (req, res) => {
       { $addToSet: { calendarAccounts: existingAccount._id } },
       { new: true }
     );
-    return res.redirect('http://localhost:5173/dashboard');
+    return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
 
   } catch (err) {
     console.error('Error in googleCallback:', err.message || err);

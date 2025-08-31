@@ -43,6 +43,21 @@ interface Event {
   calendarId?: string;
 }
 
+interface CalendarListItem {
+  calendarId: string;
+  name: string;
+  color?: string;
+}
+
+interface CalendarAccount {
+  id: string;
+  _id?: string;
+  provider: 'google' | 'microsoft';
+  email: string;
+  isConnected: boolean;
+  calendarList?: CalendarListItem[];
+}
+
 interface CalendarProps {
   selectedDate: Date;
   onDateClick: (date: Date) => void;
@@ -51,6 +66,7 @@ interface CalendarProps {
   selectedUserTimeZone: string;
   onCreateEvent: () => void;
   onEventClick: (event: Event) => void;
+  accounts: CalendarAccount[];
 }
 
 type ViewMode = 'month' | 'week' | 'day';
@@ -72,10 +88,57 @@ const CalendarComponent: React.FC<CalendarProps> = ({
   selectedCalendars,
   selectedUserTimeZone,
   onCreateEvent,
-  onEventClick
+  onEventClick,
+  accounts
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState(selectedDate);
+
+  // Function to get calendar color for an event
+  const getCalendarColor = (event: Event): string => {
+    // Find the account that owns this event
+    const account = accounts.find(acc => 
+      acc.id === event.calendarAccountId || 
+      acc._id === event.calendarAccountId
+    );
+    
+    if (!account?.calendarList) {
+      return '#3B82F6'; // Default blue if no calendar found
+    }
+
+    // Find the specific calendar within the account
+    const calendar = account.calendarList.find(cal => 
+      cal.calendarId === event.calendarId
+    );
+    
+    return calendar?.color || '#3B82F6'; // Default blue if no color specified
+  };
+
+  // Function to generate CSS classes based on calendar color
+  const getEventColorClasses = (event: Event, isHover: boolean = false) => {
+    const color = getCalendarColor(event);
+    
+    // Convert hex color to RGB for dynamic styling
+    const hexToRgb = (hex: string) => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      return result ? {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      } : { r: 59, g: 130, b: 246 }; // Default blue
+    };
+
+    const rgb = hexToRgb(color);
+    
+    return {
+      backgroundColor: isHover 
+        ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)` 
+        : `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.1)`,
+      borderColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3)`,
+      color: `rgb(${Math.max(0, rgb.r - 50)}, ${Math.max(0, rgb.g - 50)}, ${Math.max(0, rgb.b - 50)})`,
+      hoverBackgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.15)`
+    };
+  };
 
   const getEventsForDate = (date: Date) => {
     const filteredEvents = events.filter(event => {
@@ -328,7 +391,8 @@ const CalendarComponent: React.FC<CalendarProps> = ({
             return eventsForDate.length > 0 ? (
               <div className="flex items-center justify-center mt-1">
                 <div 
-                  className="w-2 h-2 bg-blue-500 rounded-full"
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: eventsForDate.length === 1 ? getCalendarColor(eventsForDate[0]) : '#3B82F6' }}
                   title={`${eventsForDate.length} event${eventsForDate.length > 1 ? 's' : ''}`}
                 />
               </div>
@@ -452,18 +516,29 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                       const endPosition = endHour * hourHeight + (endMinute / 60) * hourHeight;
                       const height = Math.max(endPosition - startPosition, 30); // Minimum height of 30px
                       
+                      const colorClasses = getEventColorClasses(event);
+                      
                       return (
                         <div
                           key={eventIndex}
-                          className="absolute mx-1 p-1 bg-blue-100 text-blue-800 rounded text-xs cursor-pointer hover:bg-blue-200 transition-colors shadow-sm border border-blue-200"
+                          className="absolute mx-1 p-1 rounded text-xs cursor-pointer transition-colors shadow-sm border"
                           style={{
                             top: `${startPosition}px`,
                             height: `${height}px`,
-                            minHeight: '30px'
+                            minHeight: '30px',
+                            backgroundColor: colorClasses.backgroundColor,
+                            borderColor: colorClasses.borderColor,
+                            color: colorClasses.color
                           }}
                           title={`${event.title} - ${formatEventTimeInUserTimeZone(event.start.dateTime)} to ${formatEventTimeInUserTimeZone(event.end.dateTime)}`}
                           onClick={() => {
                             onEventClick(event);
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = colorClasses.hoverBackgroundColor;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = colorClasses.backgroundColor;
                           }}
                         >
                           <div className="font-medium truncate">{event.title}</div>
@@ -536,20 +611,34 @@ const CalendarComponent: React.FC<CalendarProps> = ({
               <div className="space-y-2">
                 {dayEvents
                   .filter(event => event.isAllDay || event.start.isAllDay)
-                  .map((event, eventIndex) => (
-                    <div
-                      key={eventIndex}
-                      className="p-3 bg-green-50 border border-green-200 rounded-lg cursor-pointer hover:bg-green-100 transition-colors"
-                      onClick={() => {
-                        onEventClick(event);
-                      }}
-                    >
-                      <div className="font-medium text-green-900">{event.title}</div>
-                      {event.location && (
-                        <div className="text-sm text-green-700">{event.location}</div>
-                      )}
-                    </div>
-                  ))}
+                  .map((event, eventIndex) => {
+                    const colorClasses = getEventColorClasses(event);
+                    return (
+                      <div
+                        key={eventIndex}
+                        className="p-3 border rounded-lg cursor-pointer transition-colors"
+                        style={{
+                          backgroundColor: colorClasses.backgroundColor,
+                          borderColor: colorClasses.borderColor,
+                          color: colorClasses.color
+                        }}
+                        onClick={() => {
+                          onEventClick(event);
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = colorClasses.hoverBackgroundColor;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = colorClasses.backgroundColor;
+                        }}
+                      >
+                        <div className="font-medium">{event.title}</div>
+                        {event.location && (
+                          <div className="text-sm opacity-70">{event.location}</div>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           )}
@@ -585,65 +674,54 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                 const durationMinutes = (eventEnd.getTime() - eventStart.getTime()) / (1000 * 60);
                 const isShortEvent = durationMinutes <= 30;
                 
-                // Color variations for overlapping events
-                const colors = [
-                  { bg: 'bg-blue-50', border: 'border-blue-200', hover: 'hover:bg-blue-100', text: 'text-blue-900', textLight: 'text-blue-700', textLighter: 'text-blue-600' },
-                  { bg: 'bg-purple-50', border: 'border-purple-200', hover: 'hover:bg-purple-100', text: 'text-purple-900', textLight: 'text-purple-700', textLighter: 'text-purple-600' },
-                  { bg: 'bg-green-50', border: 'border-green-200', hover: 'hover:bg-green-100', text: 'text-green-900', textLight: 'text-green-700', textLighter: 'text-green-600' },
-                  { bg: 'bg-orange-50', border: 'border-orange-200', hover: 'hover:bg-orange-100', text: 'text-orange-900', textLight: 'text-orange-700', textLighter: 'text-orange-600' },
-                  { bg: 'bg-red-50', border: 'border-red-200', hover: 'hover:bg-red-100', text: 'text-red-900', textLight: 'text-red-700', textLighter: 'text-red-600' },
-                ];
-                
-                const colorScheme = layout.totalColumns > 1 ? colors[layout.column % colors.length] : colors[0];
+                const colorClasses = getEventColorClasses(event);
                 
                 return (
                   <div
                     key={layoutIndex}
-                    className={`absolute p-2 rounded-lg cursor-pointer transition-all duration-200 z-10 shadow-sm ${
-                      isShortEvent 
-                        ? 'bg-yellow-50 border border-yellow-300 hover:bg-yellow-100' 
-                        : `${colorScheme.bg} border ${colorScheme.border} ${colorScheme.hover}`
-                    }`}
+                    className="absolute p-2 rounded-lg cursor-pointer transition-all duration-200 z-10 shadow-sm border"
                     style={{
                       top: `${startPosition}px`,
                       height: `${displayHeight}px`,
                       minHeight: '30px',
                       left: `${left}%`,
                       width: `${width - 1}%`, // Subtract 1% for spacing between overlapping events
-                      marginRight: '1%'
+                      marginRight: '1%',
+                      backgroundColor: colorClasses.backgroundColor,
+                      borderColor: colorClasses.borderColor,
+                      color: colorClasses.color
                     }}
                     title={`${event.title} (${Math.round(durationMinutes)} min) - ${formatEventTimeInUserTimeZone(event.start.dateTime)} to ${formatEventTimeInUserTimeZone(event.end.dateTime)}`}
                     onClick={() => {
                       onEventClick(event);
                     }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = colorClasses.hoverBackgroundColor;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = colorClasses.backgroundColor;
+                    }}
                   >
-                    <div className={`font-medium text-sm truncate ${
-                      isShortEvent ? 'text-yellow-900' : colorScheme.text
-                    }`}>
+                    <div className="font-medium text-sm truncate">
                       {event.title}
                     </div>
-                    <div className={`text-xs ${
-                      isShortEvent ? 'text-yellow-700' : colorScheme.textLight
-                    }`}>
+                    <div className="text-xs opacity-80">
                       {formatEventTimeInUserTimeZone(event.start.dateTime)} - {formatEventTimeInUserTimeZone(event.end.dateTime)}
                       {isShortEvent && ` (${Math.round(durationMinutes)}m)`}
                     </div>
                     {event.location && displayHeight > 50 && (
-                      <div className={`text-xs mt-1 truncate ${
-                        isShortEvent ? 'text-yellow-600' : colorScheme.textLighter
-                      }`}>
+                      <div className="text-xs mt-1 truncate opacity-60">
                         {event.location}
                       </div>
                     )}
                     {/* Visual indicator for actual vs display height */}
                     {actualHeight < displayHeight && (
                       <div 
-                        className={`absolute left-0 right-0 ${
-                          isShortEvent ? 'bg-yellow-300' : `${colorScheme.bg} opacity-40`
-                        } opacity-20`}
+                        className="absolute left-0 right-0 opacity-20"
                         style={{
                           bottom: '0',
-                          height: `${actualHeight}px`
+                          height: `${actualHeight}px`,
+                          backgroundColor: colorClasses.borderColor
                         }}
                       />
                     )}

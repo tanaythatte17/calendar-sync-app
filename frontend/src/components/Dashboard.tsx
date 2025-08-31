@@ -341,6 +341,7 @@ const Dashboard: React.FC = () => {
               onEventClick={(event) => {
                 setSelectedEvent(event);
               }}
+              accounts={accounts}
             />
           </div>
 

@@ -117,7 +117,7 @@ export const microsoftCallback = async (req, res) => {
         { $push: { calendarAccounts: newCalendarAccount._id } },
         { new: true }
       );
-      return res.redirect('http://localhost:5173/dashboard');
+      return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
     }
     // Always ensure the account is in the user's calendarAccounts array
     await User.findByIdAndUpdate(
@@ -125,7 +125,7 @@ export const microsoftCallback = async (req, res) => {
       { $addToSet: { calendarAccounts: existingAccount._id } },
       { new: true }
     );
-    return res.redirect('http://localhost:5173/dashboard');
+    return res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
 
   } catch (err) {
     console.error("Error in microsoftCallback:", err.message || err);
