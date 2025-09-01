@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
-
 import CalendarComponent from './Calendar';
 import CalendarAccounts from './CalendarAccounts';
 import EventCreationModal from './EventCreationModal';
@@ -99,8 +97,7 @@ const userTimeZones = [
 ];
 
 const Dashboard: React.FC = () => {
-  const { user, logout, updateUserTimezone } = useAuth();
-  const navigate = useNavigate();
+  const { user, updateUserTimezone } = useAuth();
   const [accounts, setAccounts] = useState<CalendarAccount[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);

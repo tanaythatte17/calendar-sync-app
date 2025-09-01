@@ -7,7 +7,6 @@ import {
   Typography,
   Card,
   CardContent,
-  useTheme,
 } from '@mui/material';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import SyncIcon from '@mui/icons-material/Sync';
