@@ -158,7 +158,7 @@ const Dashboard: React.FC = () => {
         setError('No authentication token found. Please log in again.');
         return;
       }
-      window.location.href = `/api/google/auth?state=${encodeURIComponent(jwt)}`;
+      window.location.href = `${API_URL}/google/auth?state=${encodeURIComponent(jwt)}`;
     } catch (err) {
       setError('Failed to connect Google Calendar');
     }
@@ -171,7 +171,7 @@ const Dashboard: React.FC = () => {
         setError('No authentication token found. Please log in again.');
         return;
       }
-      window.location.href = `/api/microsoft/auth?state=${encodeURIComponent(jwt)}`;
+      window.location.href = `${API_URL}/microsoft/auth?state=${encodeURIComponent(jwt)}`;
     } catch (err) {
       setError('Failed to connect Microsoft Calendar');
     }
