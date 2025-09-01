@@ -180,15 +180,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-      navigate('/login');
-    } catch (err) {
-      setError('Failed to logout');
-    }
-  };
-
   const handleDeleteAccount = async (accountId: string) => {
     if (!confirm('Are you sure you want to delete this calendar account? This will remove all synced events from this account.')) {
       return;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { FaGoogle, FaMicrosoft, FaEllipsisV, FaSync, FaTrash } from 'react-icons/fa';
 
 interface CalendarListItem {

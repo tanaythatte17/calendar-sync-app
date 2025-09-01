@@ -10,11 +10,6 @@ import Dashboard from './components/Dashboard';
 import Landing from './components/Landing';
 import Navbar from './components/Navbar';
 
-const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const token = localStorage.getItem('authToken');
-  return token ? <>{children}</> : <Navigate to="/login" />;
-};
-
 function App() {
   return (
     <ThemeProvider theme={theme}>
@@ -43,4 +38,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;

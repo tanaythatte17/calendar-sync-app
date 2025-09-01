@@ -52,7 +52,6 @@ const FeatureCard: React.FC<{
 );
 
 const Landing: React.FC = () => {
-  const theme = useTheme();
 
   return (
     <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
@@ -472,4 +471,4 @@ const Landing: React.FC = () => {
   );
 };
 
-export default Landing; 
+export default Landing;

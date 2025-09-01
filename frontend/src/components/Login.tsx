@@ -27,7 +27,10 @@ const Login: React.FC = () => {
       await login(email, password);
       navigate('/dashboard');
     } catch (err) {
-      setError(err instanceof Error ? err.response.data.error : 'Failed to login');
+      setError(
+        (err && typeof err === 'object' && 'response' in err && (err as any).response?.data?.error) ||
+        (err instanceof Error ? err.message : 'Failed to login')
+      );
     }
   };
 

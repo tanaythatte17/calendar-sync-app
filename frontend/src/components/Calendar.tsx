@@ -170,20 +170,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     return filteredEvents;
   };
 
-  const getEventHourInUserTimeZone = (event: Event) => {
-    const ianaTZ = selectedUserTimeZone || 'UTC';
-    
-    if (event.isAllDay || event.start.isAllDay) {
-      return -1; // Indicate all-day event
-    }
-    
-    const hourInUserTZ = parseInt(
-      formatInTimeZone(new Date(event.start.dateTime), ianaTZ, 'HH'), 
-      10
-    );
-    return hourInUserTZ;
-  };
-
   const formatEventTimeInUserTimeZone = (dateTime: string, formatStr: string = 'HH:mm') => {
     const ianaTZ = selectedUserTimeZone || 'UTC';
     return formatInTimeZone(new Date(dateTime), ianaTZ, formatStr);
@@ -327,14 +313,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     return eachDayOfInterval({ start, end });
   };
 
-  const getTimeSlots = () => {
-    const slots = [];
-    for (let hour = 0; hour < 24; hour++) {
-      slots.push(`${hour.toString().padStart(2, '0')}:00`);
-    }
-    return slots;
-  };
-
   const renderMonthView = () => (
     <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
       <div className="p-6 border-b border-gray-100">
@@ -398,7 +376,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
               </div>
             ) : null;
           }}
-          formatShortWeekday={(locale, date) => {
+          formatShortWeekday={(_, date) => {
             return date.toLocaleDateString('en-US', { weekday: 'short' }).slice(0, 1);
           }}
           prev2Label={null}

@@ -53,12 +53,18 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
   const [attendeeEmail, setAttendeeEmail] = useState('');
   const [isAllDay, setIsAllDay] = useState(false);
   const [isRecurring, setIsRecurring] = useState(false);
-  const [recurrence, setRecurrence] = useState({
-    frequency: 'daily',
+  const [recurrence, setRecurrence] = useState<{
+    frequency: string;
+    interval: number;
+    count: string;
+    until: string;
+    byDay: string[];
+  }>({
+    frequency: '',
     interval: 1,
     count: '',
     until: '',
-    byDay: []
+    byDay: [],
   });
   const [selectedAccountsForEvent, setSelectedAccountsForEvent] = useState<string[]>([]);
   const [selectedCalendarsForEvent, setSelectedCalendarsForEvent] = useState<{ [accountId: string]: string[] }>({});
@@ -82,7 +88,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
     });
   };
 
-  const createEventInCalendar = async (eventData: any, accountId: string, calendarId: string, provider: string) => {
+  const createEventInCalendar = async (eventData: any, calendarId: string, provider: string) => {
     const response = await fetch(`${import.meta.env.VITE_API_URL}/calendar/events`, {
       method: 'POST',
       headers: {
@@ -152,7 +158,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
 
         for (const calendarId of selectedCalendars) {
           try {
-            const result = await createEventInCalendar(eventData, accountId, calendarId, account.provider);
+            const result = await createEventInCalendar(eventData, calendarId, account.provider);
             createdEvents.push(result);
           } catch (error) {
             console.error(`Failed to create event in ${account.email} (${calendarId}):`, error);
@@ -493,7 +499,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                                       account.calendarList.length > 0) {
                                     setSelectedCalendarsForEvent(prev => ({
                                       ...prev,
-                                      [accountId]: [account.calendarList[0].calendarId]
+                                      [accountId]: [account.calendarList?.[0]?.calendarId ?? '']
                                     }));
                                   }
                                 } else {

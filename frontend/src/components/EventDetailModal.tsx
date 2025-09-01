@@ -1,5 +1,5 @@
 import React from 'react';
-import { FaTimes, FaCalendar, FaClock, FaMapMarkerAlt, FaUsers, FaInfoCircle, FaExternalLinkAlt } from 'react-icons/fa';
+import { FaTimes, FaCalendar, FaMapMarkerAlt, FaUsers, FaInfoCircle, FaExternalLinkAlt } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -104,15 +104,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       case 'cancelled': return 'Cancelled';
       case 'tentative': return 'Tentative';
       default: return 'Unknown';
-    }
-  };
-
-  const formatDateTime = (dateTime: string, timezone: string) => {
-    try {
-      const zonedTime = toZonedTime(new Date(dateTime), timezone);
-      return format(zonedTime, 'MMM d, yyyy h:mm a');
-    } catch (error) {
-      return new Date(dateTime).toLocaleString();
     }
   };
 
