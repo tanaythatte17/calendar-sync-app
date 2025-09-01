@@ -32,7 +32,7 @@ interface EventCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
   accounts: CalendarAccount[];
-  onCreateEvent: (eventData: any) => Promise<void>;
+  onCreateEvent?: (eventData: any) => Promise<void>; // Made optional since we're handling API call internally
 }
 
 const EventCreationModal: React.FC<EventCreationModalProps> = ({
@@ -63,6 +63,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
   const [selectedAccountsForEvent, setSelectedAccountsForEvent] = useState<string[]>([]);
   const [selectedCalendarsForEvent, setSelectedCalendarsForEvent] = useState<{ [accountId: string]: string[] }>({});
   const [calendarSelectionError, setCalendarSelectionError] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
   const addAttendee = () => {
     if (attendeeEmail && !newEvent.attendees.includes(attendeeEmail)) {
@@ -81,6 +82,28 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
     });
   };
 
+  const createEventInCalendar = async (eventData: any, accountId: string, calendarId: string, provider: string) => {
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/calendar/events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}` // Adjust based on your auth setup
+      },
+      body: JSON.stringify({
+        ...eventData,
+        calendarId,
+        provider
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Failed to create event in ${provider} calendar`);
+    }
+
+    return await response.json();
+  };
+
   const handleAddEvent = async () => {
     // Check if at least one calendar is selected
     let atLeastOne = false;
@@ -95,25 +118,87 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
       return;
     }
 
-    const eventData = {
-      title: newEvent.title,
-      description: newEvent.description,
-      location: newEvent.location,
-      startDateTime: newEvent.startDateTime,
-      endDateTime: newEvent.endDateTime,
-      attendees: newEvent.attendees.map(email => ({ email, name: email })),
-      isAllDay,
-      recurrence: isRecurring ? {
-        frequency: recurrence.frequency,
-        interval: recurrence.interval,
-        count: recurrence.count ? Number(recurrence.count) : undefined,
-        until: recurrence.until || undefined,
-        byDay: recurrence.byDay,
-      } : null,
-    };
+    setIsCreating(true);
+    setCalendarSelectionError('');
 
-    await onCreateEvent(eventData);
-    onClose();
+    try {
+      const eventData = {
+        title: newEvent.title,
+        description: newEvent.description,
+        location: newEvent.location,
+        startDateTime: newEvent.startDateTime,
+        endDateTime: newEvent.endDateTime,
+        attendees: newEvent.attendees.map(email => ({ email, name: email })),
+        isAllDay,
+        recurrence: isRecurring ? {
+          frequency: recurrence.frequency,
+          interval: recurrence.interval,
+          count: recurrence.count ? Number(recurrence.count) : undefined,
+          until: recurrence.until || undefined,
+          byDay: recurrence.byDay,
+        } : null,
+      };
+
+      const createdEvents = [];
+
+      // Create event in all selected calendars
+      for (const accountId of selectedAccountsForEvent) {
+        const selectedCalendars = selectedCalendarsForEvent[accountId] || [];
+        const account = accounts.find(acc => 
+          (acc.id === accountId) || (acc._id === accountId) || (`${acc.provider}-${acc.email}` === accountId)
+        );
+
+        if (!account) continue;
+
+        for (const calendarId of selectedCalendars) {
+          try {
+            const result = await createEventInCalendar(eventData, accountId, calendarId, account.provider);
+            createdEvents.push(result);
+          } catch (error) {
+            console.error(`Failed to create event in ${account.email} (${calendarId}):`, error);
+            // You might want to show individual calendar errors to the user
+          }
+        }
+      }
+
+      if (createdEvents.length > 0) {
+        // Call the optional callback if provided
+        if (onCreateEvent) {
+          await onCreateEvent(eventData);
+        }
+        
+        // Reset form
+        setNewEvent({
+          title: '',
+          description: '',
+          location: '',
+          startDateTime: '',
+          endDateTime: '',
+          calendarAccountId: '',
+          attendees: []
+        });
+        setSelectedAccountsForEvent([]);
+        setSelectedCalendarsForEvent({});
+        setIsAllDay(false);
+        setIsRecurring(false);
+        setRecurrence({
+          frequency: 'daily',
+          interval: 1,
+          count: '',
+          until: '',
+          byDay: []
+        });
+        
+        onClose();
+      } else {
+        setCalendarSelectionError('Failed to create event in any selected calendar.');
+      }
+    } catch (error) {
+      console.error('Error creating event:', error);
+      setCalendarSelectionError('An error occurred while creating the event.');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -168,6 +253,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-gray-600 transition-colors p-2 hover:bg-gray-100 rounded-lg"
+              disabled={isCreating}
             >
               <svg className="w-6 h-6 sm:w-8 sm:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -185,6 +271,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
                 placeholder="Enter event title"
                 required
+                disabled={isCreating}
               />
             </div>
             
@@ -199,6 +286,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                   dateFormat={isAllDay ? 'yyyy-MM-dd' : 'yyyy-MM-dd h:mm aa'}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
                   placeholderText={isAllDay ? 'Select date' : 'Select date and time'}
+                  disabled={isCreating}
                 />
               </div>
               <div>
@@ -211,16 +299,29 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                   dateFormat={isAllDay ? 'yyyy-MM-dd' : 'yyyy-MM-dd h:mm aa'}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
                   placeholderText={isAllDay ? 'Select date' : 'Select date and time'}
+                  disabled={isCreating}
                 />
               </div>
             </div>
             <div className="flex items-center gap-4 mt-2">
               <label className="flex items-center gap-2">
-                <input type="checkbox" checked={isAllDay} onChange={e => setIsAllDay(e.target.checked)} className="accent-blue-600" />
+                <input 
+                  type="checkbox" 
+                  checked={isAllDay} 
+                  onChange={e => setIsAllDay(e.target.checked)} 
+                  className="accent-blue-600" 
+                  disabled={isCreating}
+                />
                 <span className="text-sm">All Day</span>
               </label>
               <label className="flex items-center gap-2">
-                <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} className="accent-blue-600" />
+                <input 
+                  type="checkbox" 
+                  checked={isRecurring} 
+                  onChange={e => setIsRecurring(e.target.checked)} 
+                  className="accent-blue-600" 
+                  disabled={isCreating}
+                />
                 <span className="text-sm">Recurring</span>
               </label>
             </div>
@@ -228,20 +329,37 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
               <div className="mt-4 space-y-2 bg-gray-50 p-4 rounded-xl border border-gray-200">
                 <div className="flex gap-4 items-center">
                   <label className="text-sm font-semibold text-gray-700">Frequency:</label>
-                  <select value={recurrence.frequency} onChange={e => setRecurrence(r => ({ ...r, frequency: e.target.value }))} className="bg-white border border-gray-300 rounded px-2 py-1">
+                  <select 
+                    value={recurrence.frequency} 
+                    onChange={e => setRecurrence(r => ({ ...r, frequency: e.target.value }))} 
+                    className="bg-white border border-gray-300 rounded px-2 py-1"
+                    disabled={isCreating}
+                  >
                     <option value="daily">Daily</option>
                     <option value="weekly">Weekly</option>
                     <option value="monthly">Monthly</option>
                   </select>
                   <label className="text-sm font-semibold text-gray-700 ml-4">Interval:</label>
-                  <input type="number" min={1} value={recurrence.interval} onChange={e => setRecurrence(r => ({ ...r, interval: Number(e.target.value) }))} className="w-16 bg-white border border-gray-300 rounded px-2 py-1" />
+                  <input 
+                    type="number" 
+                    min={1} 
+                    value={recurrence.interval} 
+                    onChange={e => setRecurrence(r => ({ ...r, interval: Number(e.target.value) }))} 
+                    className="w-16 bg-white border border-gray-300 rounded px-2 py-1" 
+                    disabled={isCreating}
+                  />
                 </div>
                 {recurrence.frequency === 'weekly' && (
                   <div className="flex gap-2 items-center">
                     <label className="text-sm font-semibold text-gray-700">Days:</label>
                     {["MO","TU","WE","TH","FR","SA","SU"].map(day => (
                       <label key={day} className="flex items-center gap-1">
-                        <input type="checkbox" checked={recurrence.byDay.includes(day)} onChange={e => setRecurrence(r => ({ ...r, byDay: e.target.checked ? [...r.byDay, day] : r.byDay.filter(d => d !== day) }))} />
+                        <input 
+                          type="checkbox" 
+                          checked={recurrence.byDay.includes(day)} 
+                          onChange={e => setRecurrence(r => ({ ...r, byDay: e.target.checked ? [...r.byDay, day] : r.byDay.filter(d => d !== day) }))} 
+                          disabled={isCreating}
+                        />
                         <span className="text-xs">{day}</span>
                       </label>
                     ))}
@@ -250,18 +368,46 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                 <div className="flex gap-4 items-center">
                   <label className="text-sm font-semibold text-gray-700">End:</label>
                   <label className="flex items-center gap-1">
-                    <input type="radio" checked={recurrence.count !== ''} onChange={() => setRecurrence(r => ({ ...r, count: '1', until: '' }))} />
+                    <input 
+                      type="radio" 
+                      checked={recurrence.count !== ''} 
+                      onChange={() => setRecurrence(r => ({ ...r, count: '1', until: '' }))} 
+                      disabled={isCreating}
+                    />
                     <span className="text-xs">After</span>
-                    <input type="number" min={1} value={recurrence.count} onChange={e => setRecurrence(r => ({ ...r, count: e.target.value, until: '' }))} className="w-16 bg-white border border-gray-300 rounded px-2 py-1" disabled={recurrence.count === ''} />
+                    <input 
+                      type="number" 
+                      min={1} 
+                      value={recurrence.count} 
+                      onChange={e => setRecurrence(r => ({ ...r, count: e.target.value, until: '' }))} 
+                      className="w-16 bg-white border border-gray-300 rounded px-2 py-1" 
+                      disabled={recurrence.count === '' || isCreating} 
+                    />
                     <span className="text-xs">occurrences</span>
                   </label>
                   <label className="flex items-center gap-1 ml-4">
-                    <input type="radio" checked={recurrence.until !== ''} onChange={() => setRecurrence(r => ({ ...r, until: new Date().toISOString().slice(0,10), count: '' }))} />
+                    <input 
+                      type="radio" 
+                      checked={recurrence.until !== ''} 
+                      onChange={() => setRecurrence(r => ({ ...r, until: new Date().toISOString().slice(0,10), count: '' }))} 
+                      disabled={isCreating}
+                    />
                     <span className="text-xs">Until</span>
-                    <input type="date" value={recurrence.until} onChange={e => setRecurrence(r => ({ ...r, until: e.target.value, count: '' }))} className="bg-white border border-gray-300 rounded px-2 py-1" disabled={recurrence.until === ''} />
+                    <input 
+                      type="date" 
+                      value={recurrence.until} 
+                      onChange={e => setRecurrence(r => ({ ...r, until: e.target.value, count: '' }))} 
+                      className="bg-white border border-gray-300 rounded px-2 py-1" 
+                      disabled={recurrence.until === '' || isCreating} 
+                    />
                   </label>
                   <label className="flex items-center gap-1 ml-4">
-                    <input type="radio" checked={recurrence.count === '' && recurrence.until === ''} onChange={() => setRecurrence(r => ({ ...r, count: '', until: '' }))} />
+                    <input 
+                      type="radio" 
+                      checked={recurrence.count === '' && recurrence.until === ''} 
+                      onChange={() => setRecurrence(r => ({ ...r, count: '', until: '' }))} 
+                      disabled={isCreating}
+                    />
                     <span className="text-xs">No End</span>
                   </label>
                 </div>
@@ -276,6 +422,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                 onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
                 placeholder="Enter event location"
+                disabled={isCreating}
               />
             </div>
             
@@ -287,6 +434,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
                 rows={4}
                 placeholder="Enter event description"
+                disabled={isCreating}
               />
             </div>
             
@@ -358,6 +506,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                                 }
                               }}
                               className="w-4 h-4 text-blue-600 focus:ring-blue-500 bg-white rounded"
+                              disabled={isCreating}
                             />
                             <span className="ml-2 text-sm font-medium text-gray-700">Select Account</span>
                           </label>
@@ -399,6 +548,7 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                                         });
                                       }}
                                       className="accent-blue-600 bg-white rounded"
+                                      disabled={isCreating}
                                     />
                                     <span className="truncate flex-1">{cal.name}</span>
                                     <div
@@ -500,11 +650,13 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                     onChange={(e) => setAttendeeEmail(e.target.value)}
                     className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-lg bg-white"
                     placeholder="Enter attendee email"
+                    disabled={isCreating}
                   />
                   <button
                     type="button"
                     onClick={addAttendee}
-                    className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 font-medium"
+                    className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all duration-200 font-medium disabled:opacity-50"
+                    disabled={isCreating}
                   >
                     Add
                   </button>
@@ -518,7 +670,8 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
                         <button
                           type="button"
                           onClick={() => removeAttendee(email)}
-                          className="ml-2 text-blue-600 hover:text-blue-800"
+                          className="ml-2 text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                          disabled={isCreating}
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -535,16 +688,27 @@ const EventCreationModal: React.FC<EventCreationModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-6 py-3 border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all duration-200"
+                className="px-6 py-3 border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all duration-200 disabled:opacity-50"
+                disabled={isCreating}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold"
-                disabled={!selectedAccountsForEvent.some(accountId => (selectedCalendarsForEvent[accountId] || []).length > 0)}
+                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                disabled={!selectedAccountsForEvent.some(accountId => (selectedCalendarsForEvent[accountId] || []).length > 0) || isCreating}
               >
-                Create Event
+                {isCreating ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Creating Event...
+                  </>
+                ) : (
+                  'Create Event'
+                )}
               </button>
             </div>
           </form>
