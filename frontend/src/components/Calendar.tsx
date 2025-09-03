@@ -354,14 +354,14 @@ const CalendarComponent: React.FC<CalendarProps> = ({
               onDateClick(date as Date);
             }
           }}
-          value={currentDate}
+          value={null}
+          activeStartDate={currentDate}
           tileClassName={({ date }) => {
             const eventsForDate = getEventsForDate(date);
-            const isSelected = isSameDay(date, selectedDate);
             return [
               'min-h-[80px] flex flex-col justify-between p-2 rounded-lg transition-all cursor-pointer',
               eventsForDate.length > 0 ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200' : '',
-              isSelected ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-gray-50',
+              'hover:bg-gray-50',
             ].join(' ');
           }}
           tileContent={({ date }) => {
@@ -438,16 +438,12 @@ const CalendarComponent: React.FC<CalendarProps> = ({
               {weekDays.map((day, index) => (
                 <div
                   key={index}
-                  className={`p-4 text-center border-r border-gray-200 ${
-                    isSameDay(day, selectedDate) ? 'bg-blue-50 border-blue-200' : 'bg-gray-50'
-                  }`}
+                  className="p-4 text-center border-r border-gray-200 bg-gray-50"
                 >
                   <div className="text-sm font-medium text-gray-600">
                     {format(day, 'EEE')}
                   </div>
-                  <div className={`text-lg font-bold ${
-                    isSameDay(day, selectedDate) ? 'text-blue-600' : 'text-gray-900'
-                  }`}>
+                  <div className="text-lg font-bold text-gray-900">
                     {format(day, 'd')}
                   </div>
                 </div>
@@ -470,40 +466,132 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                 </div>
               ))}
               
-              {/* Events positioned absolutely */}
+              {/* Events positioned absolutely with overlap handling */}
               {weekDays.map((day, dayIndex) => {
                 const dayEvents = getEventsForDate(day).filter(event => !(event.isAllDay || event.start.isAllDay));
                 const columnWidth = `calc((100% - ${100/8}%) / 7)`; // Account for time column
                 const leftOffset = `calc(${100/8}% + ${dayIndex} * ${columnWidth})`;
                 
+                // Calculate overlapping event layouts for this day
+                const ianaTZ = selectedUserTimeZone || 'UTC';
+                const eventData = dayEvents.map(event => {
+                  const eventStart = new Date(event.start.dateTime);
+                  const eventEnd = new Date(event.end.dateTime);
+                  
+                  const startHour = parseInt(formatInTimeZone(eventStart, ianaTZ, 'HH'), 10);
+                  const startMinute = parseInt(formatInTimeZone(eventStart, ianaTZ, 'mm'), 10);
+                  const endHour = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'HH'), 10);
+                  const endMinute = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'mm'), 10);
+                  
+                  const startPosition = startHour * hourHeight + (startMinute / 60) * hourHeight;
+                  const endPosition = endHour * hourHeight + (endMinute / 60) * hourHeight;
+                  
+                  return {
+                    event,
+                    startPosition,
+                    endPosition,
+                    column: 0,
+                    totalColumns: 1
+                  };
+                });
+
+                // Sort by start time
+                eventData.sort((a, b) => a.startPosition - b.startPosition);
+
+                // Group overlapping events
+                const groups: typeof eventData[] = [];
+                
+                for (const eventLayout of eventData) {
+                  let placedInGroup = false;
+                  
+                  // Try to find an existing group where this event overlaps
+                  for (const group of groups) {
+                    const hasOverlap = group.some(existing => 
+                      eventLayout.startPosition < existing.endPosition && 
+                      eventLayout.endPosition > existing.startPosition
+                    );
+                    
+                    if (hasOverlap) {
+                      group.push(eventLayout);
+                      placedInGroup = true;
+                      break;
+                    }
+                  }
+                  
+                  // If no overlap found, create a new group
+                  if (!placedInGroup) {
+                    groups.push([eventLayout]);
+                  }
+                }
+
+                // Calculate columns for each group
+                for (const group of groups) {
+                  if (group.length > 1) {
+                    // Multiple overlapping events - arrange in columns
+                    const sortedGroup = group.sort((a, b) => a.startPosition - b.startPosition);
+                    const columns: typeof eventData[][] = [];
+                    
+                    for (const eventLayout of sortedGroup) {
+                      let placedInColumn = false;
+                      
+                      // Try to place in existing column
+                      for (let colIndex = 0; colIndex < columns.length; colIndex++) {
+                        const column = columns[colIndex];
+                        const canPlaceInColumn = !column.some(existing => 
+                          eventLayout.startPosition < existing.endPosition && 
+                          eventLayout.endPosition > existing.startPosition
+                        );
+                        
+                        if (canPlaceInColumn) {
+                          column.push(eventLayout);
+                          eventLayout.column = colIndex;
+                          placedInColumn = true;
+                          break;
+                        }
+                      }
+                      
+                      // Create new column if needed
+                      if (!placedInColumn) {
+                        const newColumnIndex = columns.length;
+                        columns.push([eventLayout]);
+                        eventLayout.column = newColumnIndex;
+                      }
+                    }
+                    
+                    // Set layout properties
+                    const totalColumns = columns.length;
+                    for (const eventLayout of group) {
+                      eventLayout.totalColumns = totalColumns;
+                    }
+                  }
+                }
+                
                 return (
                   <div key={dayIndex} className="absolute top-0" style={{ left: leftOffset, width: columnWidth }}>
-                    {dayEvents.map((event, eventIndex) => {
-                      const ianaTZ = selectedUserTimeZone || 'UTC';
-                      const eventStart = new Date(event.start.dateTime);
-                      const eventEnd = new Date(event.end.dateTime);
-                      
-                      // Convert to user timezone
-                      const startHour = parseInt(formatInTimeZone(eventStart, ianaTZ, 'HH'), 10);
-                      const startMinute = parseInt(formatInTimeZone(eventStart, ianaTZ, 'mm'), 10);
-                      const endHour = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'HH'), 10);
-                      const endMinute = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'mm'), 10);
-                      
-                      // Calculate position and height
-                      const startPosition = startHour * hourHeight + (startMinute / 60) * hourHeight;
-                      const endPosition = endHour * hourHeight + (endMinute / 60) * hourHeight;
+                    {eventData.map((eventLayout, eventIndex) => {
+                      const { event, startPosition, endPosition, column, totalColumns } = eventLayout;
                       const height = Math.max(endPosition - startPosition, 30); // Minimum height of 30px
                       
+                      // Calculate width and position based on overlapping
+                      const eventWidth = totalColumns > 1 ? (100 / totalColumns) - 2 : 98; // Subtract 2% for spacing
+                      const eventLeft = totalColumns > 1 ? (column * (100 / totalColumns)) + 1 : 1; // Add 1% for spacing
+                      
                       const colorClasses = getEventColorClasses(event);
+                      
+                      // Determine if we should show text based on width
+                      const showTitle = eventWidth > 25; // Show title if width is more than 25%
+                      const showTime = height > 40 && eventWidth > 40; // Show time if height > 40px and width > 40%
                       
                       return (
                         <div
                           key={eventIndex}
-                          className="absolute mx-1 p-1 rounded text-xs cursor-pointer transition-colors shadow-sm border"
+                          className="absolute p-1 rounded text-xs cursor-pointer transition-colors shadow-sm border overflow-hidden"
                           style={{
                             top: `${startPosition}px`,
                             height: `${height}px`,
                             minHeight: '30px',
+                            left: `${eventLeft}%`,
+                            width: `${eventWidth}%`,
                             backgroundColor: colorClasses.backgroundColor,
                             borderColor: colorClasses.borderColor,
                             color: colorClasses.color
@@ -519,9 +607,13 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                             e.currentTarget.style.backgroundColor = colorClasses.backgroundColor;
                           }}
                         >
-                          <div className="font-medium truncate">{event.title}</div>
-                          {height > 40 && (
-                            <div className="text-xs opacity-80">
+                          {showTitle && (
+                            <div className="font-medium truncate text-xs leading-tight">
+                              {event.title}
+                            </div>
+                          )}
+                          {showTime && (
+                            <div className="text-xs opacity-80 truncate">
                               {formatEventTimeInUserTimeZone(event.start.dateTime)}
                             </div>
                           )}
