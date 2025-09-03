@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
+import { format, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { FaChevronLeft, FaChevronRight, FaCalendar, FaList, FaCalendarWeek } from 'react-icons/fa';
 
@@ -211,7 +211,13 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     // Group overlapping events
     const groups: EventLayout[][] = [];
     
-    for (const eventLayout of eventData) {
+    for (const eventLayoutRaw of eventData) {
+      // Ensure eventLayout has all EventLayout properties
+      const eventLayout: EventLayout = {
+        ...eventLayoutRaw,
+        width: 100,
+        left: 0,
+      };
       let placedInGroup = false;
       
       // Try to find an existing group where this event overlaps
@@ -221,7 +227,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
           eventLayout.endPosition > existing.startPosition
         );
         
-        if (hasOverlap) {
+        if (!hasOverlap) {
           group.push(eventLayout);
           placedInGroup = true;
           break;
@@ -253,40 +259,33 @@ const CalendarComponent: React.FC<CalendarProps> = ({
         const columns: EventLayout[][] = [];
         
         for (const eventLayout of sortedGroup) {
-          let placedInColumn = false;
-          
-          // Try to place in existing column
-          for (let colIndex = 0; colIndex < columns.length; colIndex++) {
-            const column = columns[colIndex];
-            const canPlaceInColumn = !column.some(existing => 
-              eventLayout.startPosition < existing.endPosition && 
+          let placed = false;
+          for (const column of columns) {
+            const hasOverlap = column.some(existing =>
+              eventLayout.startPosition < existing.endPosition &&
               eventLayout.endPosition > existing.startPosition
             );
-            
-            if (canPlaceInColumn) {
+            if (!hasOverlap) {
               column.push(eventLayout);
-              eventLayout.column = colIndex;
-              placedInColumn = true;
+              placed = true;
               break;
             }
           }
-          
-          // Create new column if needed
-          if (!placedInColumn) {
-            const newColumnIndex = columns.length;
+          if (!placed) {
             columns.push([eventLayout]);
-            eventLayout.column = newColumnIndex;
           }
         }
         
         // Set layout properties
         const totalColumns = columns.length;
-        const columnWidth = 100 / totalColumns;
+        columns.forEach((column, colIdx) => {
+          column.forEach(eventLayout => {
+            eventLayout.column = colIdx;
+            eventLayout.totalColumns = totalColumns;
+          });
+        });
         
         for (const eventLayout of group) {
-          eventLayout.totalColumns = totalColumns;
-          eventLayout.width = columnWidth;
-          eventLayout.left = eventLayout.column * columnWidth;
           layouts.push(eventLayout);
         }
       }
@@ -499,19 +498,25 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                 eventData.sort((a, b) => a.startPosition - b.startPosition);
 
                 // Group overlapping events
-                const groups: typeof eventData[] = [];
+                const groups: EventLayout[][] = [];
                 
-                for (const eventLayout of eventData) {
+                for (const eventLayoutRaw of eventData) {
+                  // Ensure eventLayout has all EventLayout properties
+                  const eventLayout: EventLayout = {
+                    ...eventLayoutRaw,
+                    width: 100,
+                    left: 0,
+                  };
                   let placedInGroup = false;
                   
                   // Try to find an existing group where this event overlaps
                   for (const group of groups) {
-                    const hasOverlap = group.some(existing => 
-                      eventLayout.startPosition < existing.endPosition && 
+                    const hasOverlap = group.some(existing =>
+                      eventLayout.startPosition < existing.endPosition &&
                       eventLayout.endPosition > existing.startPosition
                     );
                     
-                    if (hasOverlap) {
+                    if (!hasOverlap) {
                       group.push(eventLayout);
                       placedInGroup = true;
                       break;
@@ -529,40 +534,34 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                   if (group.length > 1) {
                     // Multiple overlapping events - arrange in columns
                     const sortedGroup = group.sort((a, b) => a.startPosition - b.startPosition);
-                    const columns: typeof eventData[][] = [];
+                    const columns: EventLayout[][] = [];
                     
                     for (const eventLayout of sortedGroup) {
-                      let placedInColumn = false;
-                      
-                      // Try to place in existing column
-                      for (let colIndex = 0; colIndex < columns.length; colIndex++) {
-                        const column = columns[colIndex];
-                        const canPlaceInColumn = !column.some(existing => 
-                          eventLayout.startPosition < existing.endPosition && 
+                      let placed = false;
+                      for (const column of columns) {
+                        const hasOverlap = column.some(existing =>
+                          eventLayout.startPosition < existing.endPosition &&
                           eventLayout.endPosition > existing.startPosition
                         );
-                        
-                        if (canPlaceInColumn) {
+                        if (!hasOverlap) {
                           column.push(eventLayout);
-                          eventLayout.column = colIndex;
-                          placedInColumn = true;
+                          placed = true;
                           break;
                         }
                       }
-                      
-                      // Create new column if needed
-                      if (!placedInColumn) {
-                        const newColumnIndex = columns.length;
+                      if (!placed) {
                         columns.push([eventLayout]);
-                        eventLayout.column = newColumnIndex;
                       }
                     }
                     
                     // Set layout properties
                     const totalColumns = columns.length;
-                    for (const eventLayout of group) {
-                      eventLayout.totalColumns = totalColumns;
-                    }
+                    columns.forEach((column, colIdx) => {
+                      column.forEach(eventLayout => {
+                        eventLayout.column = colIdx;
+                        eventLayout.totalColumns = totalColumns;
+                      });
+                    });
                   }
                 }
                 
