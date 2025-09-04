@@ -79,7 +79,7 @@ const Landing: React.FC = () => {
           <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'center', gap: 6 }}>
             <Box sx={{ flex: 1 }}>
               <Typography 
-                variant="h2" 
+                variant="h1" 
                 component="h1" 
                 gutterBottom 
                 sx={{ 
@@ -89,20 +89,22 @@ const Landing: React.FC = () => {
                   mb: 3
                 }}
               >
-                Sync Your Calendars
+                Stop Switching Tabs Between
                 <br />
-                <span style={{ color: '#fbbf24' }}>Seamlessly</span>
+                <span style={{ color: '#fbbf24' }}>Google & Microsoft Calendars</span>
               </Typography>
               <Typography 
-                variant="h5" 
+                variant="h2" 
+                component="h2"
                 sx={{ 
                   mb: 4, 
                   opacity: 0.9,
                   lineHeight: 1.5,
-                  fontWeight: 300
+                  fontWeight: 300,
+                  fontSize: { xs: '1.25rem', md: '1.5rem' }
                 }}
               >
-                Manage all your events across Google and Microsoft calendars in one beautiful, unified interface. Never miss an important meeting again.
+                Tired of switching between calendar apps? Get real-time calendar sync across Google Calendar and Outlook in one unified dashboard. See all your meetings, events, and appointments in a single view.
               </Typography>
               <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
                 <Button
@@ -128,7 +130,7 @@ const Landing: React.FC = () => {
                     transition: 'all 0.3s ease-in-out'
                   }}
                 >
-                  Get Started Free
+                  Connect Your Calendars
                 </Button>
                 <Button
                   component={RouterLink}
@@ -184,22 +186,23 @@ const Landing: React.FC = () => {
       <Container maxWidth="lg" sx={{ mb: 12 }}>
         <Box sx={{ textAlign: 'center', mb: 8 }}>
           <Typography
-            variant="h3"
+            variant="h2"
             component="h2"
             gutterBottom
             sx={{ 
               fontWeight: 700,
               mb: 2,
+              fontSize: { xs: '2rem', md: '3rem' },
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent'
             }}
           >
-            Why Choose CalendarSync?
+            Unified Calendar Management Made Simple
           </Typography>
-          <Typography variant="h6" color="text.secondary" sx={{ maxWidth: 600, mx: 'auto' }}>
-            Powerful features designed to make your calendar management effortless and efficient
+          <Typography variant="h3" component="h3" color="text.secondary" sx={{ maxWidth: 700, mx: 'auto', fontSize: { xs: '1.1rem', md: '1.25rem' } }}>
+            Experience seamless calendar integration with instant real-time updates across all your devices. We only access your calendar data - nothing else from your accounts.
           </Typography>
         </Box>
         
@@ -211,18 +214,18 @@ const Landing: React.FC = () => {
         }}>
           <FeatureCard
             icon={<SyncIcon />}
-            title="Real-time Sync"
-            description="Changes sync automatically across all your connected calendars. Update once, sync everywhere."
+            title="Instant Real-Time Sync"
+            description="Webhook-powered updates mean your calendar changes appear instantly across all platforms. Create an event in Google Calendar and see it immediately in your unified view."
           />
           <FeatureCard
             icon={<SecurityIcon />}
-            title="Secure & Private"
-            description="Your data is encrypted and secure. We never share your calendar information with third parties."
+            title="Privacy-First Calendar Access"
+            description="We only access your calendar data - nothing else. Your emails, files, and other account information remain completely private and secure."
           />
           <FeatureCard
             icon={<SpeedIcon />}
-            title="Lightning Fast"
-            description="Optimized for speed and performance. Access your calendars instantly from anywhere."
+            title="Lightning-Fast Calendar Sync"
+            description="No more waiting for calendar updates. Our advanced sync technology ensures your Google and Microsoft calendars update in real-time, every time."
           />
         </Box>
       </Container>
@@ -231,20 +234,21 @@ const Landing: React.FC = () => {
       <Box sx={{ bgcolor: 'grey.50', py: 12 }}>
         <Container maxWidth="lg">
           <Typography
-            variant="h3"
+            variant="h2"
             component="h2"
             align="center"
             gutterBottom
             sx={{ 
               fontWeight: 700,
               mb: 6,
+              fontSize: { xs: '2rem', md: '3rem' },
               background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
               backgroundClip: 'text',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent'
             }}
           >
-            How It Works
+            How Calendar Sync Works
           </Typography>
           
           <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'center', gap: 6 }}>
@@ -277,8 +281,8 @@ const Landing: React.FC = () => {
             </Box>
             
             <Box sx={{ flex: 1, pl: { md: 4 } }}>
-              <Typography variant="h4" component="h3" gutterBottom sx={{ fontWeight: 600, mb: 4 }}>
-                Simple 3-Step Setup
+              <Typography variant="h3" component="h3" gutterBottom sx={{ fontWeight: 600, mb: 4, fontSize: { xs: '1.75rem', md: '2rem' } }}>
+                Connect Multiple Calendars in Minutes
               </Typography>
               
               <Box sx={{ space: 3 }}>
@@ -301,11 +305,11 @@ const Landing: React.FC = () => {
                     1
                   </Box>
                   <Box>
-                    <Typography variant="h6" component="h4" gutterBottom sx={{ fontWeight: 600 }}>
-                      Connect Your Calendars
+                    <Typography variant="h4" component="h4" gutterBottom sx={{ fontWeight: 600, fontSize: '1.25rem' }}>
+                      Secure Calendar Connection
                     </Typography>
                     <Typography variant="body1" color="text.secondary">
-                      Securely connect your Google and Microsoft calendars with just a few clicks.
+                      Connect your Google Calendar and Microsoft Outlook with secure OAuth. We only access your calendar data - no emails, files, or personal information.
                     </Typography>
                   </Box>
                 </Box>
@@ -329,11 +333,11 @@ const Landing: React.FC = () => {
                     2
                   </Box>
                   <Box>
-                    <Typography variant="h6" component="h4" gutterBottom sx={{ fontWeight: 600 }}>
-                      View Unified Calendar
+                    <Typography variant="h4" component="h4" gutterBottom sx={{ fontWeight: 600, fontSize: '1.25rem' }}>
+                      Unified Calendar Dashboard
                     </Typography>
                     <Typography variant="body1" color="text.secondary">
-                      See all your events in one beautiful, organized calendar interface.
+                      View all your Google and Microsoft calendar events in one beautiful interface. No more switching between tabs or apps.
                     </Typography>
                   </Box>
                 </Box>
@@ -357,11 +361,11 @@ const Landing: React.FC = () => {
                     3
                   </Box>
                   <Box>
-                    <Typography variant="h6" component="h4" gutterBottom sx={{ fontWeight: 600 }}>
-                      Create & Manage Events
+                    <Typography variant="h4" component="h4" gutterBottom sx={{ fontWeight: 600, fontSize: '1.25rem' }}>
+                      Real-Time Calendar Updates
                     </Typography>
                     <Typography variant="body1" color="text.secondary">
-                      Create new events and manage existing ones with powerful tools and features.
+                      Enjoy instant synchronization with webhook technology. Create, edit, or delete events anywhere and see changes immediately across all platforms.
                     </Typography>
                   </Box>
                 </Box>
@@ -391,26 +395,30 @@ const Landing: React.FC = () => {
         <Container maxWidth="md">
           <Box sx={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
             <Typography 
-              variant="h3" 
+              variant="h2" 
               component="h2" 
               gutterBottom 
               sx={{ 
                 color: 'white',
                 fontWeight: 700,
-                mb: 3
+                mb: 3,
+                fontSize: { xs: '2rem', md: '3rem' }
               }}
             >
-              Ready to streamline your calendar management?
+              Ready to Unify Your Calendar Experience?
             </Typography>
             <Typography 
-              variant="h6" 
+              variant="h3" 
+              component="h3"
               sx={{ 
                 color: 'rgba(255, 255, 255, 0.9)',
                 mb: 6,
-                lineHeight: 1.6
+                lineHeight: 1.6,
+                fontSize: { xs: '1.1rem', md: '1.25rem' },
+                fontWeight: 300
               }}
             >
-              Join thousands of users who have simplified their scheduling and never miss an important event again.
+              Join thousands who've stopped juggling multiple calendar apps. Connect your Google and Microsoft calendars today and experience seamless real-time synchronization.
             </Typography>
             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
               <Button
@@ -436,7 +444,7 @@ const Landing: React.FC = () => {
                   transition: 'all 0.3s ease-in-out'
                 }}
               >
-                Start Free Trial
+                Start Syncing Now
               </Button>
               <Button
                 component={RouterLink}
