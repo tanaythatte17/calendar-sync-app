@@ -8,6 +8,7 @@ import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import Landing from './components/Landing';
 import Navbar from './components/Navbar';
+import Policy from './components/Policy';
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route path="/policy" element={<Policy />} />
             </Routes>
           </div>
         </Router>
