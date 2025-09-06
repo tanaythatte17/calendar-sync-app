@@ -243,7 +243,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     }
     
     // Calculate layout properties for each event
-    const totalColumns = columns.length;
     const layouts: EventLayout[] = [];
     
     for (const eventLayout of eventData) {

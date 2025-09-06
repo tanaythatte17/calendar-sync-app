@@ -20,7 +20,7 @@ jobs:
 
       - name: Deploy to VPS
         run: |
-          ssh -o StrictHostKeyChecking=no tanay@34.82.130.19 << 'EOF'
+          ssh -o StrictHostKeyChecking=no tanay@35.233.159.215 << 'EOF'
             sudo -i
             cd /var/www/calendar-sync-app
 
