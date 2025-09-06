@@ -21,7 +21,6 @@ jobs:
       - name: Deploy to VPS
         run: |
           ssh -o StrictHostKeyChecking=no tanay@35.233.159.215 << 'EOF'
-            sudo -i
             cd /var/www/calendar-sync-app
 
             # Reset repo to latest main
@@ -30,14 +29,14 @@ jobs:
 
             # Frontend build
             cd frontend
-            npm ci   # faster + cleaner than npm install
+            npm ci
             npm run build
 
             # Backend build
             cd ../backend
             npm ci
-            pm2 restart project-backend || pm2 start server.js --name project-backend
 
-            # Save PM2 state so it restarts after reboot
-            pm2 save
+            # Restart backend (use sudo only for this command if needed)
+            sudo pm2 restart project-backend || sudo pm2 start server.js --name project-backend
+            sudo pm2 save
           EOF
