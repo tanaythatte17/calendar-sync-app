@@ -175,8 +175,8 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     return formatInTimeZone(new Date(dateTime), ianaTZ, formatStr);
   };
 
-  // Function to calculate event layouts with overlap handling
-  const calculateEventLayouts = (events: Event[]): EventLayout[] => {
+  // Improved function to calculate event layouts with proper overlap handling
+  const calculateEventLayouts = (events: Event[], hourHeight: number = 80): EventLayout[] => {
     if (events.length === 0) return [];
 
     const ianaTZ = selectedUserTimeZone || 'UTC';
@@ -191,8 +191,8 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       const endHour = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'HH'), 10);
       const endMinute = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'mm'), 10);
       
-      const startPosition = startHour * 80 + (startMinute / 60) * 80;
-      const endPosition = endHour * 80 + (endMinute / 60) * 80;
+      const startPosition = startHour * hourHeight + (startMinute / 60) * hourHeight;
+      const endPosition = endHour * hourHeight + (endMinute / 60) * hourHeight;
       
       return {
         event,
@@ -205,90 +205,68 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       };
     });
 
-    // Sort by start time
-    eventData.sort((a, b) => a.startPosition - b.startPosition);
+    // Sort by start time, then by duration (longer events first)
+    eventData.sort((a, b) => {
+      if (a.startPosition === b.startPosition) {
+        return (b.endPosition - b.startPosition) - (a.endPosition - a.startPosition);
+      }
+      return a.startPosition - b.startPosition;
+    });
 
-    // Group overlapping events
-    const groups: EventLayout[][] = [];
+    // Find overlapping events and assign columns
+    const columns: EventLayout[][] = [];
     
-    for (const eventLayoutRaw of eventData) {
-      // Ensure eventLayout has all EventLayout properties
-      const eventLayout: EventLayout = {
-        ...eventLayoutRaw,
-        width: 100,
-        left: 0,
-      };
-      let placedInGroup = false;
+    for (const eventLayout of eventData) {
+      let placed = false;
       
-      // Try to find an existing group where this event overlaps
-      for (const group of groups) {
-        const hasOverlap = group.some(existing => 
-          eventLayout.startPosition < existing.endPosition && 
+      // Try to place in existing column
+      for (let i = 0; i < columns.length; i++) {
+        const column = columns[i];
+        const hasOverlap = column.some(existing =>
+          eventLayout.startPosition < existing.endPosition &&
           eventLayout.endPosition > existing.startPosition
         );
         
         if (!hasOverlap) {
-          group.push(eventLayout);
-          placedInGroup = true;
+          column.push(eventLayout);
+          eventLayout.column = i;
+          placed = true;
           break;
         }
       }
       
-      // If no overlap found, create a new group
-      if (!placedInGroup) {
-        groups.push([eventLayout]);
+      // If couldn't place in existing column, create new one
+      if (!placed) {
+        columns.push([eventLayout]);
+        eventLayout.column = columns.length - 1;
       }
     }
-
-    // Calculate columns for each group
+    
+    // Calculate layout properties for each event
+    const totalColumns = columns.length;
     const layouts: EventLayout[] = [];
     
-    for (const group of groups) {
-      if (group.length === 1) {
-        // Single event - takes full width
-        layouts.push({
-          ...group[0],
-          column: 0,
-          totalColumns: 1,
-          width: 100,
-          left: 0
-        });
-      } else {
-        // Multiple overlapping events - need to arrange in columns
-        const sortedGroup = group.sort((a, b) => a.startPosition - b.startPosition);
-        const columns: EventLayout[][] = [];
-        
-        for (const eventLayout of sortedGroup) {
-          let placed = false;
-          for (const column of columns) {
-            const hasOverlap = column.some(existing =>
-              eventLayout.startPosition < existing.endPosition &&
-              eventLayout.endPosition > existing.startPosition
-            );
-            if (!hasOverlap) {
-              column.push(eventLayout);
-              placed = true;
-              break;
-            }
-          }
-          if (!placed) {
-            columns.push([eventLayout]);
-          }
-        }
-        
-        // Set layout properties
-        const totalColumns = columns.length;
-        columns.forEach((column, colIdx) => {
-          column.forEach(eventLayout => {
-            eventLayout.column = colIdx;
-            eventLayout.totalColumns = totalColumns;
-          });
-        });
-        
-        for (const eventLayout of group) {
-          layouts.push(eventLayout);
-        }
-      }
+    for (const eventLayout of eventData) {
+      // Calculate which events this overlaps with to determine actual column count for this event
+      const overlappingEvents = eventData.filter(other =>
+        other !== eventLayout &&
+        eventLayout.startPosition < other.endPosition &&
+        eventLayout.endPosition > other.startPosition
+      );
+      
+      // Get the maximum column number among overlapping events
+      const maxOverlapColumn = overlappingEvents.reduce((max, other) => 
+        Math.max(max, other.column), eventLayout.column
+      );
+      
+      const actualColumns = maxOverlapColumn + 1;
+      const columnWidth = 100 / actualColumns;
+      
+      eventLayout.totalColumns = actualColumns;
+      eventLayout.width = columnWidth - 1; // Leave 1% gap between events
+      eventLayout.left = eventLayout.column * columnWidth;
+      
+      layouts.push(eventLayout);
     }
 
     return layouts;
@@ -465,132 +443,36 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                 </div>
               ))}
               
-              {/* Events positioned absolutely with overlap handling */}
+              {/* Events positioned absolutely with proper overlap handling */}
               {weekDays.map((day, dayIndex) => {
                 const dayEvents = getEventsForDate(day).filter(event => !(event.isAllDay || event.start.isAllDay));
+                const eventLayouts = calculateEventLayouts(dayEvents, hourHeight);
+                
                 const columnWidth = `calc((100% - ${100/8}%) / 7)`; // Account for time column
                 const leftOffset = `calc(${100/8}% + ${dayIndex} * ${columnWidth})`;
                 
-                // Calculate overlapping event layouts for this day
-                const ianaTZ = selectedUserTimeZone || 'UTC';
-                const eventData = dayEvents.map(event => {
-                  const eventStart = new Date(event.start.dateTime);
-                  const eventEnd = new Date(event.end.dateTime);
-                  
-                  const startHour = parseInt(formatInTimeZone(eventStart, ianaTZ, 'HH'), 10);
-                  const startMinute = parseInt(formatInTimeZone(eventStart, ianaTZ, 'mm'), 10);
-                  const endHour = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'HH'), 10);
-                  const endMinute = parseInt(formatInTimeZone(eventEnd, ianaTZ, 'mm'), 10);
-                  
-                  const startPosition = startHour * hourHeight + (startMinute / 60) * hourHeight;
-                  const endPosition = endHour * hourHeight + (endMinute / 60) * hourHeight;
-                  
-                  return {
-                    event,
-                    startPosition,
-                    endPosition,
-                    column: 0,
-                    totalColumns: 1
-                  };
-                });
-
-                // Sort by start time
-                eventData.sort((a, b) => a.startPosition - b.startPosition);
-
-                // Group overlapping events
-                const groups: EventLayout[][] = [];
-                
-                for (const eventLayoutRaw of eventData) {
-                  // Ensure eventLayout has all EventLayout properties
-                  const eventLayout: EventLayout = {
-                    ...eventLayoutRaw,
-                    width: 100,
-                    left: 0,
-                  };
-                  let placedInGroup = false;
-                  
-                  // Try to find an existing group where this event overlaps
-                  for (const group of groups) {
-                    const hasOverlap = group.some(existing =>
-                      eventLayout.startPosition < existing.endPosition &&
-                      eventLayout.endPosition > existing.startPosition
-                    );
-                    
-                    if (!hasOverlap) {
-                      group.push(eventLayout);
-                      placedInGroup = true;
-                      break;
-                    }
-                  }
-                  
-                  // If no overlap found, create a new group
-                  if (!placedInGroup) {
-                    groups.push([eventLayout]);
-                  }
-                }
-
-                // Calculate columns for each group
-                for (const group of groups) {
-                  if (group.length > 1) {
-                    // Multiple overlapping events - arrange in columns
-                    const sortedGroup = group.sort((a, b) => a.startPosition - b.startPosition);
-                    const columns: EventLayout[][] = [];
-                    
-                    for (const eventLayout of sortedGroup) {
-                      let placed = false;
-                      for (const column of columns) {
-                        const hasOverlap = column.some(existing =>
-                          eventLayout.startPosition < existing.endPosition &&
-                          eventLayout.endPosition > existing.startPosition
-                        );
-                        if (!hasOverlap) {
-                          column.push(eventLayout);
-                          placed = true;
-                          break;
-                        }
-                      }
-                      if (!placed) {
-                        columns.push([eventLayout]);
-                      }
-                    }
-                    
-                    // Set layout properties
-                    const totalColumns = columns.length;
-                    columns.forEach((column, colIdx) => {
-                      column.forEach(eventLayout => {
-                        eventLayout.column = colIdx;
-                        eventLayout.totalColumns = totalColumns;
-                      });
-                    });
-                  }
-                }
-                
                 return (
                   <div key={dayIndex} className="absolute top-0" style={{ left: leftOffset, width: columnWidth }}>
-                    {eventData.map((eventLayout, eventIndex) => {
-                      const { event, startPosition, endPosition, column, totalColumns } = eventLayout;
+                    {eventLayouts.map((layout, layoutIndex) => {
+                      const { event, startPosition, endPosition, width, left } = layout;
                       const height = Math.max(endPosition - startPosition, 30); // Minimum height of 30px
-                      
-                      // Calculate width and position based on overlapping
-                      const eventWidth = totalColumns > 1 ? (100 / totalColumns) - 2 : 98; // Subtract 2% for spacing
-                      const eventLeft = totalColumns > 1 ? (column * (100 / totalColumns)) + 1 : 1; // Add 1% for spacing
                       
                       const colorClasses = getEventColorClasses(event);
                       
-                      // Determine if we should show text based on width
-                      const showTitle = eventWidth > 25; // Show title if width is more than 25%
-                      const showTime = height > 40 && eventWidth > 40; // Show time if height > 40px and width > 40%
+                      // Determine if we should show text based on width and height
+                      const showTitle = width > 25; // Show title if width is more than 25%
+                      const showTime = height > 40 && width > 30; // Show time if height > 40px and width > 30%
                       
                       return (
                         <div
-                          key={eventIndex}
+                          key={`${event._id}-${layoutIndex}`}
                           className="absolute p-1 rounded text-xs cursor-pointer transition-colors shadow-sm border overflow-hidden"
                           style={{
                             top: `${startPosition}px`,
                             height: `${height}px`,
                             minHeight: '30px',
-                            left: `${eventLeft}%`,
-                            width: `${eventWidth}%`,
+                            left: `${left}%`,
+                            width: `${width}%`,
                             backgroundColor: colorClasses.backgroundColor,
                             borderColor: colorClasses.borderColor,
                             color: colorClasses.color
@@ -634,7 +516,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     const timedEvents = dayEvents.filter(event => !(event.isAllDay || event.start.isAllDay));
     
     // Calculate layouts for overlapping events
-    const eventLayouts = calculateEventLayouts(timedEvents);
+    const eventLayouts = calculateEventLayouts(timedEvents, 80);
 
     return (
       <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
@@ -730,7 +612,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
               </div>
             ))}
             
-            {/* Events positioned absolutely with overlap handling */}
+            {/* Events positioned absolutely with proper overlap handling */}
             <div className="absolute top-0 right-0" style={{ left: '80px' }}>
               {eventLayouts.map((layout, layoutIndex) => {
                 const { event, startPosition, endPosition, width, left } = layout;
@@ -747,15 +629,14 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                 
                 return (
                   <div
-                    key={layoutIndex}
+                    key={`${event._id}-${layoutIndex}`}
                     className="absolute p-2 rounded-lg cursor-pointer transition-all duration-200 z-10 shadow-sm border"
                     style={{
                       top: `${startPosition}px`,
                       height: `${displayHeight}px`,
                       minHeight: '30px',
                       left: `${left}%`,
-                      width: `${width - 1}%`, // Subtract 1% for spacing between overlapping events
-                      marginRight: '1%',
+                      width: `${width}%`,
                       backgroundColor: colorClasses.backgroundColor,
                       borderColor: colorClasses.borderColor,
                       color: colorClasses.color

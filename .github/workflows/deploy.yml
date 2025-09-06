@@ -1,0 +1,43 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.GOOGLE_VM_PRIVATE_KEY }}
+
+      - name: Deploy to VPS
+        run: |
+          ssh -o StrictHostKeyChecking=no tanay@<YOUR_STATIC_IP> << 'EOF'
+            sudo -i
+            cd /var/www/calendar-sync-app
+
+            # Reset repo to latest main
+            git fetch --all
+            git reset --hard origin/main
+
+            # Frontend build
+            cd frontend
+            npm ci   # faster + cleaner than npm install
+            npm run build
+
+            # Backend build
+            cd ../backend
+            npm ci
+            pm2 restart project-backend || pm2 start server.js --name project-backend
+
+            # Save PM2 state so it restarts after reboot
+            pm2 save
+          EOF
