@@ -71,8 +71,8 @@ jobs:
       # Deploy using rsync
       - name: Deploy files to VPS
         run: |
-          rsync -avz --delete --exclude=".env" -e "ssh -o StrictHostKeyChecking=no" frontend-dist/ tanay@35.233.159.215:/var/www/calendar-sync-app/frontend/dist
-          rsync -avz --delete --exclude=".env" -e "ssh -o StrictHostKeyChecking=no" backend/ tanay@35.233.159.215:/var/www/calendar-sync-app/backend
+          rsync -az --delete --exclude=".env" --info=progress2 -e "ssh -o StrictHostKeyChecking=no" frontend-dist/ tanay@35.233.159.215:/var/www/calendar-sync-app/frontend/dist
+          rsync -az --delete --exclude=".env" --info=progress2 -e "ssh -o StrictHostKeyChecking=no" backend/ tanay@35.233.159.215:/var/www/calendar-sync-app/backend
 
       # Restart backend
       - name: Restart backend on VPS
