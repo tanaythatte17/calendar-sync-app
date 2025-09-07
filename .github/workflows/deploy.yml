@@ -11,55 +11,75 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # Install and build frontend on CI runner
-      - name: Build frontend
-        working-directory: frontend
+      # Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Build frontend
+      - name: Install frontend dependencies
         run: |
+          cd frontend
           npm ci
           npm run build
-        env:
-          CI: false
 
-      # Prepare release package
-      - name: Package release
+      # Build backend (just install deps, no build needed usually)
+      - name: Install backend dependencies
         run: |
-          mkdir -p release
-          cp -r backend release/backend
-          cp -r frontend/dist release/frontend
+          cd backend
+          npm ci
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
+      # Upload artifacts (frontend build + backend code)
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: release
+          name: frontend-build
+          path: frontend/dist
+
+      - name: Upload backend
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-code
+          path: backend
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
 
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: app-release
-          path: release
-
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.7.0
         with:
           ssh-private-key: ${{ secrets.GOOGLE_VM_PRIVATE_KEY }}
 
-      - name: Deploy to VPS
-        run: |
-          rsync -avz --delete release/ tanay@35.233.159.215:/var/www/calendar-sync-app/
+      # Download artifacts
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend-dist
 
+      - name: Download backend code
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-code
+          path: backend
+
+      # Deploy using rsync
+      - name: Deploy files to VPS
+        run: |
+          rsync -avz --delete frontend-dist/ tanay@35.233.159.215:/var/www/calendar-sync-app/frontend/dist
+          rsync -avz --delete backend/ tanay@35.233.159.215:/var/www/calendar-sync-app/backend
+
+      # Restart backend
+      - name: Restart backend on VPS
+        run: |
           ssh -o StrictHostKeyChecking=no tanay@35.233.159.215 << 'EOF'
             cd /var/www/calendar-sync-app/backend
             npm ci --omit=dev
-
-            # Restart backend
             pm2 restart project-backend || pm2 start server.js --name project-backend
             pm2 save
           EOF
