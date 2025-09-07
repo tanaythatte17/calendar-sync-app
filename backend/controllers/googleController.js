@@ -37,6 +37,7 @@ export const connectGoogle = async (req, res) => {
       maxAge: 10 * 60 * 1000 // 10 minutes
     });
   }
+  console.log('Generating url');
   const url = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: [
