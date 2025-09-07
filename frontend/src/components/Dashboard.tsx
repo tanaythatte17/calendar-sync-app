@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../contexts/AuthContext';
 import CalendarComponent from './Calendar';
@@ -61,6 +61,11 @@ interface Event {
   calendarId?: string;
 }
 
+interface DateRange {
+  start: Date;
+  end: Date;
+}
+
 // Replace the timezone dropdown with a simple list of UTC offsets
 const userTimeZones = [
   { label: 'UTC-12:00', value: 'Etc/GMT+12' },
@@ -110,6 +115,10 @@ const Dashboard: React.FC = () => {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
 
+  // Lazy loading state
+  const [loadedRanges, setLoadedRanges] = useState<DateRange[]>([]);
+  const [eventLoadingCache, setEventLoadingCache] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     const found = userTimeZones.find(tz => tz.value === user?.timezone);
     setSelectedUserTimeZone(found ? found.value : 'UTC');
@@ -121,17 +130,123 @@ const Dashboard: React.FC = () => {
     setTimeout(() => setTzSaveStatus(null), 2000);
   };
 
+  // Function to check if a date range overlaps with already loaded ranges
+  const isRangeLoaded = useCallback((startDate: Date, endDate: Date): boolean => {
+    return loadedRanges.some(range => 
+      startDate >= range.start && endDate <= range.end
+    );
+  }, [loadedRanges]);
+
+  // Function to generate a cache key for the date range
+  const getRangeKey = (startDate: Date, endDate: Date): string => {
+    return `${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}`;
+  };
+
+  // Enhanced function to load events for a specific date range
+  const loadEventsForRange = useCallback(async (startDate: Date, endDate: Date): Promise<Event[]> => {
+    const rangeKey = getRangeKey(startDate, endDate);
+    
+    // Check if we're already loading this range
+    if (eventLoadingCache.has(rangeKey)) {
+      // Return empty array, but the loading will complete eventually
+      return [];
+    }
+
+    // Check if range is already fully loaded
+    if (isRangeLoaded(startDate, endDate)) {
+      // Return existing events in this range
+      return events.filter(event => {
+        const eventDate = new Date(event.start.dateTime);
+        return eventDate >= startDate && eventDate <= endDate;
+      });
+    }
+
+    try {
+      setEventLoadingCache(prev => new Set([...prev, rangeKey]));
+      
+      const response = await api.get(`${API_URL}/user/events`, {
+        params: {
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString()
+        }
+      });
+
+      const newEvents = response.data;
+      
+      // Update events state by merging with existing events
+      setEvents(prevEvents => {
+        // Create a map to avoid duplicates based on event._id
+        const eventMap = new Map(prevEvents.map(event => [event._id, event]));
+        
+        // Add new events to the map
+        newEvents.forEach((event: Event) => {
+          eventMap.set(event._id, event);
+        });
+        
+        return Array.from(eventMap.values());
+      });
+
+      // Update loaded ranges
+      setLoadedRanges(prev => {
+        // Find overlapping ranges to merge
+        const newRange = { start: startDate, end: endDate };
+        const nonOverlapping = prev.filter(range =>
+          endDate < range.start || startDate > range.end
+        );
+        
+        const overlapping = prev.filter(range =>
+          !(endDate < range.start || startDate > range.end)
+        );
+        
+        if (overlapping.length > 0) {
+          // Merge all overlapping ranges with the new range
+          const mergedStart = new Date(Math.min(
+            startDate.getTime(),
+            ...overlapping.map(r => r.start.getTime())
+          ));
+          const mergedEnd = new Date(Math.max(
+            endDate.getTime(),
+            ...overlapping.map(r => r.end.getTime())
+          ));
+          
+          return [...nonOverlapping, { start: mergedStart, end: mergedEnd }];
+        }
+        
+        return [...nonOverlapping, newRange];
+      });
+
+      return newEvents;
+    } catch (err) {
+      console.error('Error loading events for range:', err);
+      setError('Failed to load events for the selected period');
+      return [];
+    } finally {
+      setEventLoadingCache(prev => {
+        const updated = new Set(prev);
+        updated.delete(rangeKey);
+        return updated;
+      });
+    }
+  }, [isRangeLoaded, events]);
+
+  // Initial data fetch with lazy loading
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [accountsRes, eventsRes] = await Promise.all([
-        api.get(`${API_URL}/user/accounts`),
-        api.get(`${API_URL}/user/events`)
-      ]);
+      // Load accounts first
+      const accountsRes = await api.get(`${API_URL}/user/accounts`);
       setAccounts(accountsRes.data);
-      setEvents(eventsRes.data);
+
+      // Load initial events range (current month ±3 months)
+      const now = new Date();
+      const initialStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+      const initialEnd = new Date(now.getFullYear(), now.getMonth() + 4, 0); // Last day of +3 month
+      
+      await loadEventsForRange(initialStart, initialEnd);
+      
     } catch (err) {
       setError('Failed to load calendar data');
+      console.error('Error fetching initial data:', err);
     } finally {
       setLoading(false);
     }
@@ -204,6 +319,11 @@ const Dashboard: React.FC = () => {
       await api.get(syncUrl);
       setError('');
       alert(`${provider.charAt(0).toUpperCase() + provider.slice(1)} calendar synced!`);
+      
+      // Clear loaded ranges to force a refresh of events
+      setLoadedRanges([]);
+      setEvents([]);
+      
       await fetchData();
     } catch (err) {
       setError(`Failed to sync ${provider} calendar`);
@@ -243,7 +363,7 @@ const Dashboard: React.FC = () => {
       }
       
       if (createdEvents.length > 0) {
-        setEvents([...events, ...createdEvents]);
+        setEvents(prevEvents => [...prevEvents, ...createdEvents]);
       }
     } catch (err) {
       setError('Failed to create event');
@@ -265,7 +385,7 @@ const Dashboard: React.FC = () => {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
         <div className="flex flex-col items-center">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
-          <p className="text-gray-700 text-base">Loading...</p>
+          <p className="text-gray-700 text-base">Loading your calendar...</p>
         </div>
       </div>
     );
@@ -283,6 +403,12 @@ const Dashboard: React.FC = () => {
               </svg>
               {error}
             </p>
+            <button 
+              onClick={() => setError('')}
+              className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+            >
+              Dismiss
+            </button>
           </div>
         </div>
       )}
@@ -294,7 +420,6 @@ const Dashboard: React.FC = () => {
           <div className="xl:col-span-3">
             {/* Header with Create Event Button and Timezone Selector */}
             <div className="flex items-center justify-between mb-4">
-
               {/* Timezone Selector */}
               <div className="flex items-center gap-2">
                 <label htmlFor="user-timezone-select" className="text-sm font-medium text-gray-700">Timezone:</label>
@@ -318,7 +443,7 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Calendar Component */}
+            {/* Calendar Component with Lazy Loading */}
             <CalendarComponent
               selectedDate={selectedDate}
               onDateClick={handleDateClick}
@@ -330,6 +455,8 @@ const Dashboard: React.FC = () => {
                 setSelectedEvent(event);
               }}
               accounts={accounts}
+              onLoadEvents={loadEventsForRange}
+              loading={loading}
             />
           </div>
 

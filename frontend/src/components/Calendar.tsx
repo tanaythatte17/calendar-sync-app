@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
-import { format, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, startOfMonth, endOfMonth, addMonths, subMonths, isAfter, isBefore } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { FaChevronLeft, FaChevronRight, FaCalendar, FaList, FaCalendarWeek } from 'react-icons/fa';
 
@@ -58,6 +58,11 @@ interface CalendarAccount {
   calendarList?: CalendarListItem[];
 }
 
+interface DateRange {
+  start: Date;
+  end: Date;
+}
+
 interface CalendarProps {
   selectedDate: Date;
   onDateClick: (date: Date) => void;
@@ -67,6 +72,8 @@ interface CalendarProps {
   onCreateEvent: () => void;
   onEventClick: (event: Event) => void;
   accounts: CalendarAccount[];
+  onLoadEvents: (startDate: Date, endDate: Date) => Promise<Event[]>;
+  loading?: boolean;
 }
 
 type ViewMode = 'month' | 'week' | 'day';
@@ -81,51 +88,215 @@ interface EventLayout {
   left: number;
 }
 
+interface LoadedRange {
+  start: Date;
+  end: Date;
+  events: Event[];
+}
+
 const CalendarComponent: React.FC<CalendarProps> = ({
   selectedDate,
   onDateClick,
-  events,
+  events: initialEvents,
   selectedCalendars,
   selectedUserTimeZone,
   onCreateEvent,
   onEventClick,
-  accounts
+  accounts,
+  onLoadEvents,
+  loading: externalLoading = false
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState(selectedDate);
+  const [loadedRanges, setLoadedRanges] = useState<LoadedRange[]>([]);
+  const [allEvents, setAllEvents] = useState<Event[]>(initialEvents);
+  const [isLoading, setIsLoading] = useState(false);
+  const [navigationLoading, setNavigationLoading] = useState(false);
+
+  // Calculate buffer ranges for different view modes
+  const getBufferMonths = (mode: ViewMode): number => {
+    switch (mode) {
+      case 'month': return 2;
+      case 'week': return 1;
+      case 'day': return 1;
+      default: return 2;
+    }
+  };
+
+  // Get required date range for current view
+  const getRequiredRange = useCallback((date: Date, mode: ViewMode): DateRange => {
+    const bufferMonths = getBufferMonths(mode);
+    
+    switch (mode) {
+      case 'month': {
+        const monthStart = startOfMonth(date);
+        const monthEnd = endOfMonth(date);
+        return {
+          start: startOfMonth(subMonths(monthStart, bufferMonths)),
+          end: endOfMonth(addMonths(monthEnd, bufferMonths))
+        };
+      }
+      case 'week': {
+        const weekStart = startOfWeek(date, { weekStartsOn: 1 });
+        const weekEnd = endOfWeek(date, { weekStartsOn: 1 });
+        return {
+          start: startOfMonth(subMonths(weekStart, bufferMonths)),
+          end: endOfMonth(addMonths(weekEnd, bufferMonths))
+        };
+      }
+      case 'day': {
+        return {
+          start: startOfMonth(subMonths(date, bufferMonths)),
+          end: endOfMonth(addMonths(date, bufferMonths))
+        };
+      }
+      default:
+        return {
+          start: startOfMonth(subMonths(date, bufferMonths)),
+          end: endOfMonth(addMonths(date, bufferMonths))
+        };
+    }
+  }, []);
+
+  // Check if a date range is covered by loaded ranges
+  const isRangeCovered = useCallback((requiredRange: DateRange): boolean => {
+    return loadedRanges.some(loaded => 
+      !isAfter(requiredRange.start, loaded.start) && 
+      !isBefore(requiredRange.end, loaded.end)
+    );
+  }, [loadedRanges]);
+
+  // Load events for a specific date range
+  const loadEventsForRange = useCallback(async (range: DateRange, showLoading = true) => {
+    if (isRangeCovered(range)) {
+      return;
+    }
+
+    if (showLoading) {
+      setIsLoading(true);
+    }
+
+    try {
+      const newEvents = await onLoadEvents(range.start, range.end);
+      
+      // Merge with existing events, avoiding duplicates
+      setAllEvents(prevEvents => {
+        const eventMap = new Map(prevEvents.map(event => [event._id, event]));
+        newEvents.forEach(event => eventMap.set(event._id, event));
+        return Array.from(eventMap.values());
+      });
+
+      // Update loaded ranges - merge overlapping ranges
+      setLoadedRanges(prevRanges => {
+        const newRange: LoadedRange = {
+          start: range.start,
+          end: range.end,
+          events: newEvents
+        };
+
+        // Find overlapping ranges to merge
+        const overlapping = prevRanges.filter(loaded =>
+          !(isAfter(range.start, loaded.end) || isBefore(range.end, loaded.start))
+        );
+
+        // Remove overlapping ranges and add merged range
+        const nonOverlapping = prevRanges.filter(loaded =>
+          isAfter(range.start, loaded.end) || isBefore(range.end, loaded.start)
+        );
+
+        if (overlapping.length > 0) {
+          const mergedStart = new Date(Math.min(
+            range.start.getTime(),
+            ...overlapping.map(r => r.start.getTime())
+          ));
+          const mergedEnd = new Date(Math.max(
+            range.end.getTime(),
+            ...overlapping.map(r => r.end.getTime())
+          ));
+
+          return [...nonOverlapping, {
+            start: mergedStart,
+            end: mergedEnd,
+            events: newEvents
+          }];
+        }
+
+        return [...nonOverlapping, newRange];
+      });
+    } catch (error) {
+      console.error('Failed to load events:', error);
+    } finally {
+      if (showLoading) {
+        setIsLoading(false);
+      }
+    }
+  }, [onLoadEvents, isRangeCovered]);
+
+  // Check and load data when view or date changes
+  useEffect(() => {
+    const requiredRange = getRequiredRange(currentDate, viewMode);
+    
+    if (!isRangeCovered(requiredRange)) {
+      // Show navigation loading only for user-initiated navigation
+      if (currentDate.getTime() !== selectedDate.getTime()) {
+        setNavigationLoading(true);
+      }
+      
+      loadEventsForRange(requiredRange).finally(() => {
+        setNavigationLoading(false);
+      });
+    }
+  }, [currentDate, viewMode, getRequiredRange, isRangeCovered, loadEventsForRange, selectedDate]);
+
+  // Initialize with initial events
+  useEffect(() => {
+    if (initialEvents.length > 0) {
+      setAllEvents(initialEvents);
+      
+      // Create initial loaded range based on initial events
+      if (initialEvents.length > 0) {
+        const eventDates = initialEvents.map(event => new Date(event.start.dateTime));
+        const minDate = new Date(Math.min(...eventDates.map(d => d.getTime())));
+        const maxDate = new Date(Math.max(...eventDates.map(d => d.getTime())));
+        
+        setLoadedRanges([{
+          start: startOfMonth(subMonths(minDate, 1)),
+          end: endOfMonth(addMonths(maxDate, 1)),
+          events: initialEvents
+        }]);
+      }
+    }
+  }, [initialEvents]);
 
   // Function to get calendar color for an event
   const getCalendarColor = (event: Event): string => {
-    // Find the account that owns this event
     const account = accounts.find(acc => 
       acc.id === event.calendarAccountId || 
       acc._id === event.calendarAccountId
     );
     
     if (!account?.calendarList) {
-      return '#3B82F6'; // Default blue if no calendar found
+      return '#3B82F6';
     }
 
-    // Find the specific calendar within the account
     const calendar = account.calendarList.find(cal => 
       cal.calendarId === event.calendarId
     );
     
-    return calendar?.color || '#3B82F6'; // Default blue if no color specified
+    return calendar?.color || '#3B82F6';
   };
 
   // Function to generate CSS classes based on calendar color
   const getEventColorClasses = (event: Event, isHover: boolean = false) => {
     const color = getCalendarColor(event);
     
-    // Convert hex color to RGB for dynamic styling
     const hexToRgb = (hex: string) => {
       const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
       return result ? {
         r: parseInt(result[1], 16),
         g: parseInt(result[2], 16),
         b: parseInt(result[3], 16)
-      } : { r: 59, g: 130, b: 246 }; // Default blue
+      } : { r: 59, g: 130, b: 246 };
     };
 
     const rgb = hexToRgb(color);
@@ -140,24 +311,21 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     };
   };
 
-  const getEventsForDate = (date: Date) => {
-    const filteredEvents = events.filter(event => {
+  const getEventsForDate = useCallback((date: Date) => {
+    const filteredEvents = allEvents.filter(event => {
       if (event.calendarId && selectedCalendars && !selectedCalendars[event.calendarId]) {
         return false;
       }
       
       const ianaTZ = selectedUserTimeZone || 'UTC';
       
-      // Handle all-day events
       if (event.isAllDay || event.start.isAllDay) {
-        // For all-day events, just compare the date part
         const eventStartDate = new Date(event.start.dateTime);
         const eventDateString = format(eventStartDate, 'yyyy-MM-dd');
         const targetDateString = format(date, 'yyyy-MM-dd');
         return eventDateString === targetDateString;
       }
       
-      // For timed events, convert to user timezone and compare dates
       const eventStartInUserTZ = formatInTimeZone(
         new Date(event.start.dateTime), 
         ianaTZ, 
@@ -168,20 +336,19 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       return eventStartInUserTZ === targetDateString;
     });
     return filteredEvents;
-  };
+  }, [allEvents, selectedCalendars, selectedUserTimeZone]);
 
   const formatEventTimeInUserTimeZone = (dateTime: string, formatStr: string = 'HH:mm') => {
     const ianaTZ = selectedUserTimeZone || 'UTC';
     return formatInTimeZone(new Date(dateTime), ianaTZ, formatStr);
   };
 
-  // Improved function to calculate event layouts with proper overlap handling
+  // Calculate event layouts with proper overlap handling
   const calculateEventLayouts = (events: Event[], hourHeight: number = 80): EventLayout[] => {
     if (events.length === 0) return [];
 
     const ianaTZ = selectedUserTimeZone || 'UTC';
     
-    // Convert events to layout objects with time positions
     const eventData = events.map(event => {
       const eventStart = new Date(event.start.dateTime);
       const eventEnd = new Date(event.end.dateTime);
@@ -205,7 +372,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       };
     });
 
-    // Sort by start time, then by duration (longer events first)
     eventData.sort((a, b) => {
       if (a.startPosition === b.startPosition) {
         return (b.endPosition - b.startPosition) - (a.endPosition - a.startPosition);
@@ -213,13 +379,11 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       return a.startPosition - b.startPosition;
     });
 
-    // Find overlapping events and assign columns
     const columns: EventLayout[][] = [];
     
     for (const eventLayout of eventData) {
       let placed = false;
       
-      // Try to place in existing column
       for (let i = 0; i < columns.length; i++) {
         const column = columns[i];
         const hasOverlap = column.some(existing =>
@@ -235,25 +399,21 @@ const CalendarComponent: React.FC<CalendarProps> = ({
         }
       }
       
-      // If couldn't place in existing column, create new one
       if (!placed) {
         columns.push([eventLayout]);
         eventLayout.column = columns.length - 1;
       }
     }
     
-    // Calculate layout properties for each event
     const layouts: EventLayout[] = [];
     
     for (const eventLayout of eventData) {
-      // Calculate which events this overlaps with to determine actual column count for this event
       const overlappingEvents = eventData.filter(other =>
         other !== eventLayout &&
         eventLayout.startPosition < other.endPosition &&
         eventLayout.endPosition > other.startPosition
       );
       
-      // Get the maximum column number among overlapping events
       const maxOverlapColumn = overlappingEvents.reduce((max, other) => 
         Math.max(max, other.column), eventLayout.column
       );
@@ -262,7 +422,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       const columnWidth = 100 / actualColumns;
       
       eventLayout.totalColumns = actualColumns;
-      eventLayout.width = columnWidth - 1; // Leave 1% gap between events
+      eventLayout.width = columnWidth - 1;
       eventLayout.left = eventLayout.column * columnWidth;
       
       layouts.push(eventLayout);
@@ -271,7 +431,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     return layouts;
   };
 
-  const navigateDate = (direction: 'prev' | 'next') => {
+  const navigateDate = async (direction: 'prev' | 'next') => {
     const newDate = new Date(currentDate);
     if (viewMode === 'month') {
       newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1));
@@ -280,7 +440,16 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     } else {
       newDate.setDate(newDate.getDate() + (direction === 'next' ? 1 : -1));
     }
+    
     setCurrentDate(newDate);
+    
+    // Check if we need to load more data
+    const requiredRange = getRequiredRange(newDate, viewMode);
+    if (!isRangeCovered(requiredRange)) {
+      setNavigationLoading(true);
+      await loadEventsForRange(requiredRange);
+      setNavigationLoading(false);
+    }
   };
 
   const getWeekDays = () => {
@@ -289,8 +458,24 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     return eachDayOfInterval({ start, end });
   };
 
+  // Loading overlay component
+  const LoadingOverlay = ({ show }: { show: boolean }) => {
+    if (!show) return null;
+    
+    return (
+      <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center rounded-2xl">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-sm font-medium text-gray-600">Loading events...</span>
+        </div>
+      </div>
+    );
+  };
+
   const renderMonthView = () => (
-    <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden relative">
+      <LoadingOverlay show={navigationLoading || (isLoading && allEvents.length === 0)} />
+      
       <div className="p-6 border-b border-gray-100">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-gray-900">
@@ -300,18 +485,21 @@ const CalendarComponent: React.FC<CalendarProps> = ({
             <button
               onClick={() => navigateDate('prev')}
               className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
+              disabled={navigationLoading}
             >
               <FaChevronLeft className="w-4 h-4" />
             </button>
             <button
               onClick={() => setCurrentDate(new Date())}
               className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+              disabled={navigationLoading}
             >
               Today
             </button>
             <button
               onClick={() => navigateDate('next')}
               className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
+              disabled={navigationLoading}
             >
               <FaChevronRight className="w-4 h-4" />
             </button>
@@ -322,7 +510,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       <div className="p-6">
         <Calendar
           onChange={(date) => {
-            // In month view, clicking a date should switch to day view
             if (viewMode === 'month') {
               setCurrentDate(date as Date);
               setViewMode('day');
@@ -368,10 +555,12 @@ const CalendarComponent: React.FC<CalendarProps> = ({
 
   const renderWeekView = () => {
     const weekDays = getWeekDays();
-    const hourHeight = 60; // Height for each hour in pixels
+    const hourHeight = 60;
 
     return (
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden relative">
+        <LoadingOverlay show={navigationLoading} />
+        
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-900">
@@ -381,24 +570,28 @@ const CalendarComponent: React.FC<CalendarProps> = ({
               <button
                 onClick={() => setViewMode('month')}
                 className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-all"
+                disabled={navigationLoading}
               >
                 ← Month View
               </button>
               <button
                 onClick={() => navigateDate('prev')}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
+                disabled={navigationLoading}
               >
                 <FaChevronLeft className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setCurrentDate(new Date())}
                 className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                disabled={navigationLoading}
               >
                 This Week
               </button>
               <button
                 onClick={() => navigateDate('next')}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
+                disabled={navigationLoading}
               >
                 <FaChevronRight className="w-4 h-4" />
               </button>
@@ -408,7 +601,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
         
         <div className="overflow-x-auto">
           <div className="min-w-[800px] relative">
-            {/* Header with day names */}
             <div className="grid grid-cols-8 border-b border-gray-200 relative z-20 bg-white">
               <div className="p-4 border-r border-gray-200 bg-gray-50"></div>
               {weekDays.map((day, index) => (
@@ -426,7 +618,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
               ))}
             </div>
             
-            {/* Time grid background */}
             <div className="relative">
               {Array.from({ length: 24 }, (_, hour) => (
                 <div key={hour} className="grid grid-cols-8 border-b border-gray-100" style={{ height: `${hourHeight}px` }}>
@@ -435,32 +626,29 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                   </div>
                   {weekDays.map((_, dayIndex) => (
                     <div key={dayIndex} className="border-r border-gray-200 relative">
-                      {/* 30-minute marker */}
                       <div className="absolute top-1/2 left-0 w-full border-t border-gray-100" style={{ opacity: 0.3 }}></div>
                     </div>
                   ))}
                 </div>
               ))}
               
-              {/* Events positioned absolutely with proper overlap handling */}
               {weekDays.map((day, dayIndex) => {
                 const dayEvents = getEventsForDate(day).filter(event => !(event.isAllDay || event.start.isAllDay));
                 const eventLayouts = calculateEventLayouts(dayEvents, hourHeight);
                 
-                const columnWidth = `calc((100% - ${100/8}%) / 7)`; // Account for time column
+                const columnWidth = `calc((100% - ${100/8}%) / 7)`;
                 const leftOffset = `calc(${100/8}% + ${dayIndex} * ${columnWidth})`;
                 
                 return (
                   <div key={dayIndex} className="absolute top-0" style={{ left: leftOffset, width: columnWidth }}>
                     {eventLayouts.map((layout, layoutIndex) => {
                       const { event, startPosition, endPosition, width, left } = layout;
-                      const height = Math.max(endPosition - startPosition, 30); // Minimum height of 30px
+                      const height = Math.max(endPosition - startPosition, 30);
                       
                       const colorClasses = getEventColorClasses(event);
                       
-                      // Determine if we should show text based on width and height
-                      const showTitle = width > 25; // Show title if width is more than 25%
-                      const showTime = height > 40 && width > 30; // Show time if height > 40px and width > 30%
+                      const showTitle = width > 25;
+                      const showTime = height > 40 && width > 30;
                       
                       return (
                         <div
@@ -477,9 +665,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                             color: colorClasses.color
                           }}
                           title={`${event.title} - ${formatEventTimeInUserTimeZone(event.start.dateTime)} to ${formatEventTimeInUserTimeZone(event.end.dateTime)}`}
-                          onClick={() => {
-                            onEventClick(event);
-                          }}
+                          onClick={() => onEventClick(event)}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.backgroundColor = colorClasses.hoverBackgroundColor;
                           }}
@@ -514,11 +700,12 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     const dayEvents = getEventsForDate(currentDate);
     const timedEvents = dayEvents.filter(event => !(event.isAllDay || event.start.isAllDay));
     
-    // Calculate layouts for overlapping events
     const eventLayouts = calculateEventLayouts(timedEvents, 80);
 
     return (
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden relative">
+        <LoadingOverlay show={navigationLoading} />
+        
         <div className="p-6 border-b border-gray-100">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-900">
@@ -528,24 +715,28 @@ const CalendarComponent: React.FC<CalendarProps> = ({
               <button
                 onClick={() => setViewMode('month')}
                 className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-all"
+                disabled={navigationLoading}
               >
                 ← Month View
               </button>
               <button
                 onClick={() => navigateDate('prev')}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
+                disabled={navigationLoading}
               >
                 <FaChevronLeft className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setCurrentDate(new Date())}
                 className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                disabled={navigationLoading}
               >
                 Today
               </button>
               <button
                 onClick={() => navigateDate('next')}
                 className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-all"
+                disabled={navigationLoading}
               >
                 <FaChevronRight className="w-4 h-4" />
               </button>
@@ -554,7 +745,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
         </div>
         
         <div className="p-6">
-          {/* All-day events section */}
           {dayEvents.some(event => event.isAllDay || event.start.isAllDay) && (
             <div className="mb-6">
               <h3 className="text-sm font-medium text-gray-500 mb-3">All Day</h3>
@@ -572,9 +762,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                           borderColor: colorClasses.borderColor,
                           color: colorClasses.color
                         }}
-                        onClick={() => {
-                          onEventClick(event);
-                        }}
+                        onClick={() => onEventClick(event)}
                         onMouseEnter={(e) => {
                           e.currentTarget.style.backgroundColor = colorClasses.hoverBackgroundColor;
                         }}
@@ -593,32 +781,26 @@ const CalendarComponent: React.FC<CalendarProps> = ({
             </div>
           )}
           
-          {/* Timed events - continuous timeline */}
           <div className="relative">
-            {/* Hour markers */}
             {Array.from({ length: 24 }, (_, hour) => (
               <div key={hour} className="flex border-b border-gray-100 relative" style={{ height: '80px' }}>
                 <div className="w-20 text-sm text-gray-500 font-medium pt-2">
                   {`${hour.toString().padStart(2, '0')}:00`}
                 </div>
                 <div className="flex-1 border-l border-gray-200 relative">
-                  {/* 30-minute marker */}
                   <div className="absolute left-0 w-full border-t border-gray-100" style={{ top: '40px', opacity: 0.5 }}></div>
-                  {/* 15-minute markers */}
                   <div className="absolute left-0 w-4 border-t border-gray-200" style={{ top: '20px', opacity: 0.3 }}></div>
                   <div className="absolute left-0 w-4 border-t border-gray-200" style={{ top: '60px', opacity: 0.3 }}></div>
                 </div>
               </div>
             ))}
             
-            {/* Events positioned absolutely with proper overlap handling */}
             <div className="absolute top-0 right-0" style={{ left: '80px' }}>
               {eventLayouts.map((layout, layoutIndex) => {
                 const { event, startPosition, endPosition, width, left } = layout;
                 const actualHeight = endPosition - startPosition;
-                const displayHeight = Math.max(actualHeight, 30); // Minimum height for readability
+                const displayHeight = Math.max(actualHeight, 30);
                 
-                // Calculate duration in minutes for styling decisions
                 const eventStart = new Date(event.start.dateTime);
                 const eventEnd = new Date(event.end.dateTime);
                 const durationMinutes = (eventEnd.getTime() - eventStart.getTime()) / (1000 * 60);
@@ -641,9 +823,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                       color: colorClasses.color
                     }}
                     title={`${event.title} (${Math.round(durationMinutes)} min) - ${formatEventTimeInUserTimeZone(event.start.dateTime)} to ${formatEventTimeInUserTimeZone(event.end.dateTime)}`}
-                    onClick={() => {
-                      onEventClick(event);
-                    }}
+                    onClick={() => onEventClick(event)}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.backgroundColor = colorClasses.hoverBackgroundColor;
                     }}
@@ -663,7 +843,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                         {event.location}
                       </div>
                     )}
-                    {/* Visual indicator for actual vs display height */}
                     {actualHeight < displayHeight && (
                       <div 
                         className="absolute left-0 right-0 opacity-20"
@@ -686,7 +865,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* View Toggle */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
           <button
@@ -696,6 +874,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                 ? 'bg-white text-blue-600 shadow-sm' 
                 : 'text-gray-600 hover:text-gray-900'
             }`}
+            disabled={navigationLoading}
           >
             <FaCalendar className="w-4 h-4" />
           </button>
@@ -706,6 +885,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                 ? 'bg-white text-blue-600 shadow-sm' 
                 : 'text-gray-600 hover:text-gray-900'
             }`}
+            disabled={navigationLoading}
           >
             <FaCalendarWeek className="w-4 h-4" />
           </button>
@@ -716,6 +896,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
                 ? 'bg-white text-blue-600 shadow-sm' 
                 : 'text-gray-600 hover:text-gray-900'
             }`}
+            disabled={navigationLoading}
           >
             <FaList className="w-4 h-4" />
           </button>
@@ -732,7 +913,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
         </button>
       </div>
 
-      {/* Calendar View */}
       {viewMode === 'month' && renderMonthView()}
       {viewMode === 'week' && renderWeekView()}
       {viewMode === 'day' && renderDayView()}
