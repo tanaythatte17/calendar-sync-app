@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, startOfMonth, endOfMonth, addMonths, subMonths, isAfter, isBefore } from 'date-fns';
@@ -104,7 +104,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
   onEventClick,
   accounts,
   onLoadEvents,
-  loading: externalLoading = false
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState(selectedDate);
