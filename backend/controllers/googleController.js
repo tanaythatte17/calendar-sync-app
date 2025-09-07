@@ -42,7 +42,6 @@ export const connectGoogle = async (req, res) => {
     access_type: 'offline',
     scope: [
       'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/calendar.readonly',
       'https://www.googleapis.com/auth/userinfo.email'
     ],
     prompt: 'consent',
