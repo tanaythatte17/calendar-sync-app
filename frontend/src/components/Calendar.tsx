@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, startOfMonth, endOfMonth, addMonths, subMonths, isAfter, isBefore } from 'date-fns';
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { FaChevronLeft, FaChevronRight, FaCalendar, FaList, FaCalendarWeek } from 'react-icons/fa';
 
@@ -58,11 +58,6 @@ interface CalendarAccount {
   calendarList?: CalendarListItem[];
 }
 
-interface DateRange {
-  start: Date;
-  end: Date;
-}
-
 interface CalendarProps {
   selectedDate: Date;
   onDateClick: (date: Date) => void;
@@ -88,16 +83,10 @@ interface EventLayout {
   left: number;
 }
 
-interface LoadedRange {
-  start: Date;
-  end: Date;
-  events: Event[];
-}
-
 const CalendarComponent: React.FC<CalendarProps> = ({
   selectedDate,
   onDateClick,
-  events: initialEvents,
+  events,
   selectedCalendars,
   selectedUserTimeZone,
   onCreateEvent,
@@ -107,165 +96,123 @@ const CalendarComponent: React.FC<CalendarProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState(selectedDate);
-  const [loadedRanges, setLoadedRanges] = useState<LoadedRange[]>([]);
-  const [allEvents, setAllEvents] = useState<Event[]>(initialEvents);
-  const [isLoading, setIsLoading] = useState(false);
   const [navigationLoading, setNavigationLoading] = useState(false);
+  
+  // Track loaded month ranges to prevent duplicate loading
+  const loadedMonthsRef = useRef<Set<string>>(new Set());
+  const loadingMonthsRef = useRef<Set<string>>(new Set());
 
-  // Calculate buffer ranges for different view modes
-  const getBufferMonths = (mode: ViewMode): number => {
-    switch (mode) {
-      case 'month': return 2;
-      case 'week': return 1;
-      case 'day': return 1;
-      default: return 2;
-    }
+  // Create a normalized month key for tracking
+  const createMonthKey = (date: Date): string => {
+    return `${date.getFullYear()}-${date.getMonth()}`;
   };
 
-  // Get required date range for current view
-  const getRequiredRange = useCallback((date: Date, mode: ViewMode): DateRange => {
-    const bufferMonths = getBufferMonths(mode);
+  // Get required months for current view with 3-month buffer
+  const getRequiredMonths = useCallback((date: Date, mode: ViewMode): Date[] => {
+    const months: Date[] = [];
+    let startMonth: Date;
+    let endMonth: Date;
     
     switch (mode) {
-      case 'month': {
-        const monthStart = startOfMonth(date);
-        const monthEnd = endOfMonth(date);
-        return {
-          start: startOfMonth(subMonths(monthStart, bufferMonths)),
-          end: endOfMonth(addMonths(monthEnd, bufferMonths))
-        };
-      }
-      case 'week': {
+      case 'month':
+        startMonth = subMonths(startOfMonth(date), 3);
+        endMonth = addMonths(startOfMonth(date), 3);
+        break;
+      case 'week':
         const weekStart = startOfWeek(date, { weekStartsOn: 1 });
         const weekEnd = endOfWeek(date, { weekStartsOn: 1 });
-        return {
-          start: startOfMonth(subMonths(weekStart, bufferMonths)),
-          end: endOfMonth(addMonths(weekEnd, bufferMonths))
-        };
-      }
-      case 'day': {
-        return {
-          start: startOfMonth(subMonths(date, bufferMonths)),
-          end: endOfMonth(addMonths(date, bufferMonths))
-        };
-      }
+        startMonth = subMonths(startOfMonth(weekStart), 2);
+        endMonth = addMonths(startOfMonth(weekEnd), 2);
+        break;
+      case 'day':
+        startMonth = subMonths(startOfMonth(date), 2);
+        endMonth = addMonths(startOfMonth(date), 2);
+        break;
       default:
-        return {
-          start: startOfMonth(subMonths(date, bufferMonths)),
-          end: endOfMonth(addMonths(date, bufferMonths))
-        };
+        startMonth = subMonths(startOfMonth(date), 3);
+        endMonth = addMonths(startOfMonth(date), 3);
     }
+
+    let current = new Date(startMonth);
+    while (current <= endMonth) {
+      months.push(new Date(current));
+      current = addMonths(current, 1);
+    }
+
+    return months;
   }, []);
 
-  // Check if a date range is covered by loaded ranges
-  const isRangeCovered = useCallback((requiredRange: DateRange): boolean => {
-    return loadedRanges.some(loaded => 
-      !isAfter(requiredRange.start, loaded.start) && 
-      !isBefore(requiredRange.end, loaded.end)
-    );
-  }, [loadedRanges]);
+  // Load events for specific months that aren't already loaded
+  const loadEventsForMonths = useCallback(async (months: Date[], showLoading = true) => {
+    const monthsToLoad = months.filter(month => {
+      const monthKey = createMonthKey(month);
+      return !loadedMonthsRef.current.has(monthKey) && !loadingMonthsRef.current.has(monthKey);
+    });
 
-  // Load events for a specific date range
-  const loadEventsForRange = useCallback(async (range: DateRange, showLoading = true) => {
-    if (isRangeCovered(range)) {
+    if (monthsToLoad.length === 0) {
       return;
     }
 
     if (showLoading) {
-      setIsLoading(true);
+      setNavigationLoading(true);
     }
 
     try {
-      const newEvents = await onLoadEvents(range.start, range.end);
-      
-      // Merge with existing events, avoiding duplicates
-      setAllEvents(prevEvents => {
-        const eventMap = new Map(prevEvents.map(event => [event._id, event]));
-        newEvents.forEach(event => eventMap.set(event._id, event));
-        return Array.from(eventMap.values());
+      // Mark months as loading
+      monthsToLoad.forEach(month => {
+        loadingMonthsRef.current.add(createMonthKey(month));
       });
 
-      // Update loaded ranges - merge overlapping ranges
-      setLoadedRanges(prevRanges => {
-        const newRange: LoadedRange = {
-          start: range.start,
-          end: range.end,
-          events: newEvents
-        };
-
-        // Find overlapping ranges to merge
-        const overlapping = prevRanges.filter(loaded =>
-          !(isAfter(range.start, loaded.end) || isBefore(range.end, loaded.start))
-        );
-
-        // Remove overlapping ranges and add merged range
-        const nonOverlapping = prevRanges.filter(loaded =>
-          isAfter(range.start, loaded.end) || isBefore(range.end, loaded.start)
-        );
-
-        if (overlapping.length > 0) {
-          const mergedStart = new Date(Math.min(
-            range.start.getTime(),
-            ...overlapping.map(r => r.start.getTime())
-          ));
-          const mergedEnd = new Date(Math.max(
-            range.end.getTime(),
-            ...overlapping.map(r => r.end.getTime())
-          ));
-
-          return [...nonOverlapping, {
-            start: mergedStart,
-            end: mergedEnd,
-            events: newEvents
-          }];
-        }
-
-        return [...nonOverlapping, newRange];
+      // Load events for each month range
+      const promises = monthsToLoad.map(month => {
+        const start = startOfMonth(month);
+        const end = endOfMonth(month);
+        return onLoadEvents(start, end);
       });
+
+      await Promise.all(promises);
+
+      // Mark months as loaded
+      monthsToLoad.forEach(month => {
+        const monthKey = createMonthKey(month);
+        loadedMonthsRef.current.add(monthKey);
+        loadingMonthsRef.current.delete(monthKey);
+      });
+
     } catch (error) {
-      console.error('Failed to load events:', error);
+      console.error('Failed to load events for months:', error);
+      // Remove from loading set on error
+      monthsToLoad.forEach(month => {
+        loadingMonthsRef.current.delete(createMonthKey(month));
+      });
     } finally {
       if (showLoading) {
-        setIsLoading(false);
-      }
-    }
-  }, [onLoadEvents, isRangeCovered]);
-
-  // Check and load data when view or date changes
-  useEffect(() => {
-    const requiredRange = getRequiredRange(currentDate, viewMode);
-    
-    if (!isRangeCovered(requiredRange)) {
-      // Show navigation loading only for user-initiated navigation
-      if (currentDate.getTime() !== selectedDate.getTime()) {
-        setNavigationLoading(true);
-      }
-      
-      loadEventsForRange(requiredRange).finally(() => {
         setNavigationLoading(false);
-      });
-    }
-  }, [currentDate, viewMode, getRequiredRange, isRangeCovered, loadEventsForRange, selectedDate]);
-
-  // Initialize with initial events
-  useEffect(() => {
-    if (initialEvents.length > 0) {
-      setAllEvents(initialEvents);
-      
-      // Create initial loaded range based on initial events
-      if (initialEvents.length > 0) {
-        const eventDates = initialEvents.map(event => new Date(event.start.dateTime));
-        const minDate = new Date(Math.min(...eventDates.map(d => d.getTime())));
-        const maxDate = new Date(Math.max(...eventDates.map(d => d.getTime())));
-        
-        setLoadedRanges([{
-          start: startOfMonth(subMonths(minDate, 1)),
-          end: endOfMonth(addMonths(maxDate, 1)),
-          events: initialEvents
-        }]);
       }
     }
-  }, [initialEvents]);
+  }, [onLoadEvents]);
+
+  // Load required events when view or date changes
+  useEffect(() => {
+    const requiredMonths = getRequiredMonths(currentDate, viewMode);
+    loadEventsForMonths(requiredMonths, currentDate.getTime() !== selectedDate.getTime());
+  }, [currentDate, viewMode, getRequiredMonths, loadEventsForMonths, selectedDate]);
+
+  // Handle navigation with proper loading - throttled to prevent rapid clicks
+  const navigateDate = useCallback(async (direction: 'prev' | 'next') => {
+    if (navigationLoading) return;
+    
+    const newDate = new Date(currentDate);
+    if (viewMode === 'month') {
+      newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1));
+    } else if (viewMode === 'week') {
+      newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7));
+    } else {
+      newDate.setDate(newDate.getDate() + (direction === 'next' ? 1 : -1));
+    }
+    
+    setCurrentDate(newDate);
+  }, [currentDate, viewMode, navigationLoading]);
 
   // Function to get calendar color for an event
   const getCalendarColor = (event: Event): string => {
@@ -311,7 +258,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
   };
 
   const getEventsForDate = useCallback((date: Date) => {
-    const filteredEvents = allEvents.filter(event => {
+    const filteredEvents = events.filter(event => {
       if (event.calendarId && selectedCalendars && !selectedCalendars[event.calendarId]) {
         return false;
       }
@@ -335,7 +282,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       return eventStartInUserTZ === targetDateString;
     });
     return filteredEvents;
-  }, [allEvents, selectedCalendars, selectedUserTimeZone]);
+  }, [events, selectedCalendars, selectedUserTimeZone]);
 
   const formatEventTimeInUserTimeZone = (dateTime: string, formatStr: string = 'HH:mm') => {
     const ianaTZ = selectedUserTimeZone || 'UTC';
@@ -430,27 +377,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     return layouts;
   };
 
-  const navigateDate = async (direction: 'prev' | 'next') => {
-    const newDate = new Date(currentDate);
-    if (viewMode === 'month') {
-      newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1));
-    } else if (viewMode === 'week') {
-      newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7));
-    } else {
-      newDate.setDate(newDate.getDate() + (direction === 'next' ? 1 : -1));
-    }
-    
-    setCurrentDate(newDate);
-    
-    // Check if we need to load more data
-    const requiredRange = getRequiredRange(newDate, viewMode);
-    if (!isRangeCovered(requiredRange)) {
-      setNavigationLoading(true);
-      await loadEventsForRange(requiredRange);
-      setNavigationLoading(false);
-    }
-  };
-
   const getWeekDays = () => {
     const start = startOfWeek(currentDate, { weekStartsOn: 1 });
     const end = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -473,7 +399,7 @@ const CalendarComponent: React.FC<CalendarProps> = ({
 
   const renderMonthView = () => (
     <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden relative">
-      <LoadingOverlay show={navigationLoading || (isLoading && allEvents.length === 0)} />
+      <LoadingOverlay show={navigationLoading} />
       
       <div className="p-6 border-b border-gray-100">
         <div className="flex items-center justify-between">
@@ -509,11 +435,13 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       <div className="p-6">
         <Calendar
           onChange={(date) => {
-            if (viewMode === 'month') {
-              setCurrentDate(date as Date);
-              setViewMode('day');
-            } else {
-              onDateClick(date as Date);
+            if (!navigationLoading) {
+              if (viewMode === 'month') {
+                setCurrentDate(date as Date);
+                setViewMode('day');
+              } else {
+                onDateClick(date as Date);
+              }
             }
           }}
           value={null}
@@ -567,7 +495,9 @@ const CalendarComponent: React.FC<CalendarProps> = ({
             </h2>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setViewMode('month')}
+                onClick={() => {
+                  if (!navigationLoading) setViewMode('month');
+                }}
                 className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-all"
                 disabled={navigationLoading}
               >
@@ -712,7 +642,9 @@ const CalendarComponent: React.FC<CalendarProps> = ({
             </h2>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setViewMode('month')}
+                onClick={() => {
+                  if (!navigationLoading) setViewMode('month');
+                }}
                 className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-all"
                 disabled={navigationLoading}
               >
@@ -867,7 +799,9 @@ const CalendarComponent: React.FC<CalendarProps> = ({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
           <button
-            onClick={() => setViewMode('month')}
+            onClick={() => {
+              if (!navigationLoading) setViewMode('month');
+            }}
             className={`p-2 rounded-md transition-all ${
               viewMode === 'month' 
                 ? 'bg-white text-blue-600 shadow-sm' 
@@ -878,7 +812,9 @@ const CalendarComponent: React.FC<CalendarProps> = ({
             <FaCalendar className="w-4 h-4" />
           </button>
           <button
-            onClick={() => setViewMode('week')}
+            onClick={() => {
+              if (!navigationLoading) setViewMode('week');
+            }}
             className={`p-2 rounded-md transition-all ${
               viewMode === 'week' 
                 ? 'bg-white text-blue-600 shadow-sm' 
@@ -889,7 +825,9 @@ const CalendarComponent: React.FC<CalendarProps> = ({
             <FaCalendarWeek className="w-4 h-4" />
           </button>
           <button
-            onClick={() => setViewMode('day')}
+            onClick={() => {
+              if (!navigationLoading) setViewMode('day');
+            }}
             className={`p-2 rounded-md transition-all ${
               viewMode === 'day' 
                 ? 'bg-white text-blue-600 shadow-sm' 
