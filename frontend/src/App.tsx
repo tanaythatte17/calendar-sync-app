@@ -9,6 +9,7 @@ import Dashboard from './components/Dashboard';
 import Landing from './components/Landing';
 import Navbar from './components/Navbar';
 import Policy from './components/Policy';
+import TermsOfService from './components/TermsOfService';
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
                 }
               />
               <Route path="/policy" element={<Policy />} />
+              <Route path="/terms" element={<TermsOfService />} />
             </Routes>
           </div>
         </Router>
