@@ -6,12 +6,45 @@ on:
       - main
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      # Install and build frontend on CI runner
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+        env:
+          CI: false
+
+      # Prepare release package
+      - name: Package release
+        run: |
+          mkdir -p release
+          cp -r backend release/backend
+          cp -r frontend/dist release/frontend
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: app-release
+          path: release
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: app-release
+          path: release
 
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.7.0
@@ -20,23 +53,13 @@ jobs:
 
       - name: Deploy to VPS
         run: |
+          rsync -avz --delete release/ tanay@35.233.159.215:/var/www/calendar-sync-app/
+
           ssh -o StrictHostKeyChecking=no tanay@35.233.159.215 << 'EOF'
-            cd /var/www/calendar-sync-app
+            cd /var/www/calendar-sync-app/backend
+            npm ci --omit=dev
 
-            # Reset repo to latest main
-            git fetch --all
-            git reset --hard origin/main
-
-            # Frontend build
-            cd frontend
-            npm ci
-            npm run build
-
-            # Backend build
-            cd ../backend
-            npm ci
-
-            # Restart backend (use sudo only for this command if needed)
-            sudo pm2 restart project-backend || sudo pm2 start server.js --name project-backend
-            sudo pm2 save
+            # Restart backend
+            pm2 restart project-backend || pm2 start server.js --name project-backend
+            pm2 save
           EOF
