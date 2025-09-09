@@ -474,6 +474,14 @@ const Landing: React.FC = () => {
           </Box>
         </Container>
       </Box>
+      {/* Footer with Policy link */}
+      <Box sx={{ bgcolor: 'background.paper', py: 3, textAlign: 'center', borderTop: '1px solid #eee' }}>
+        <Typography variant="body2" color="text.secondary">
+          <RouterLink to="/policy" style={{ color: '#667eea', textDecoration: 'underline' }}>
+            Privacy Policy
+          </RouterLink>
+        </Typography>
+      </Box>
     </Box>
   );
 };

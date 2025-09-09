@@ -38,14 +38,16 @@ const Navbar: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg">
-                <span className="text-white text-xl font-bold">CS</span>
-              </div>
+              <img 
+                src="../../assets/images/UCV.png" 
+                alt="Unified Calendar View Logo"
+                className="w-12 h-12 rounded-xl shadow-lg object-cover"
+              />
               <Link 
                 to="/" 
                 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent hover:from-blue-700 hover:to-indigo-700 transition-all duration-200"
               >
-                CalendarSync
+                UnifiedCalendarView
               </Link>
             </div>
 
