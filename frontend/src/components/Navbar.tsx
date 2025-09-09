@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { FaBell, FaUser, FaCog, FaSignOutAlt } from 'react-icons/fa';
+import logoImage from '../../assets/images/UCV.png';
 
 const Navbar: React.FC = () => {
   const { isAuthenticated, user, logout } = useAuth();
@@ -39,7 +40,7 @@ const Navbar: React.FC = () => {
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-3">
               <img 
-                src="../../assets/images/UCV.png" 
+                src={logoImage}
                 alt="Unified Calendar View Logo"
                 className="w-12 h-12 rounded-xl shadow-lg object-cover"
               />
