@@ -129,7 +129,7 @@ export const microsoftCallback = async (req, res) => {
 
   } catch (err) {
     console.error("Error in microsoftCallback:", err.message || err);
-    res.status(500).send("Microsoft authentication failed");
+    res.redirect(`${process.env.FRONTEND_URL}/dashboard?message=${encodeURIComponent('Microsoft authentication failed')}`);
   }
 };
 

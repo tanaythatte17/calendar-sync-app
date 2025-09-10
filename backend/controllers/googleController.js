@@ -129,7 +129,7 @@ export const googleCallback = async (req, res) => {
 
   } catch (err) {
     console.error('Error in googleCallback:', err.message || err);
-    res.status(500).send('Google authentication failed');
+    res.redirect(`${process.env.FRONTEND_URL}/dashboard?message=${encodeURIComponent('Google authentication failed')}`);
   }
 };
 
