@@ -48,7 +48,9 @@ const Register: React.FC = () => {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      py: 4
+      py: 4,
+      position: 'relative',
+      zIndex: 0
     }}>
       <Container component="main" maxWidth="sm">
         <Paper
@@ -65,6 +67,7 @@ const Register: React.FC = () => {
             border: '1px solid rgba(255, 255, 255, 0.2)',
             position: 'relative',
             overflow: 'hidden',
+            zIndex: 0,
             '&::before': {
               content: '""',
               position: 'absolute',
@@ -74,6 +77,7 @@ const Register: React.FC = () => {
               bottom: 0,
               background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23667eea" fill-opacity="0.03"%3E%3Ccircle cx="30" cy="30" r="2"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
               opacity: 0.5,
+              zIndex: 0
             }
           }}
         >

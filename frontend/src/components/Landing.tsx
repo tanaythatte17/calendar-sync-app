@@ -159,7 +159,7 @@ const Landing: React.FC = () => {
               </Box>
             </Box>
             
-            <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+            <Box sx={{ flex: 1, display: { xs: 'none', md: 'flex' }, justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
               <Box
                 sx={{
                   width: '100%',
@@ -252,7 +252,7 @@ const Landing: React.FC = () => {
           </Typography>
           
           <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'center', gap: 6 }}>
-            <Box sx={{ flex: 1 }}>
+            <Box sx={{ flex: 1, display: { xs: 'none', md: 'block' } }}>
               <Box
                 sx={{
                   width: '100%',

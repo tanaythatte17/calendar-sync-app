@@ -104,6 +104,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     try {
       await api.post('/auth/logout');
+      // As an extra guard, explicitly remove the cookie on client for dev tools display
+      try {
+        document.cookie = 'jwt=; Max-Age=0; path=/; SameSite=None; Secure';
+      } catch {}
+      console.log('Logout successful');
     } catch (error) {
       console.error('Logout failed:', error);
     } finally {

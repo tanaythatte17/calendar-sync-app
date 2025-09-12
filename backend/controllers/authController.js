@@ -67,7 +67,21 @@ export const login = async (req,res) => {
 }
 export const logout = (req,res) => {
     try {
-        res.cookie("jwt","",{maxAge:0});
+        // Clear cookie with the SAME attributes used when setting it
+        res.clearCookie("jwt", {
+            httpOnly: true,
+            sameSite: "None",
+            secure: true,
+            path: "/",
+        });
+        // Fallback for some clients that ignore clearCookie with attributes
+        res.cookie("jwt", "", {
+            httpOnly: true,
+            sameSite: "None",
+            secure: true,
+            path: "/",
+            expires: new Date(0)
+        });
         res.status(200).json({message:"Successfully logged out"});
     } catch (error) {
         console.log(error.message);
