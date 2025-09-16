@@ -100,7 +100,7 @@ const TermsOfService: React.FC = () => (
       <Typography paragraph>
         If you have questions about these Terms, contact us at:
         <ul>
-          <li>📧 admin@unifiedcalendarview.xyz</li>
+          <li>📧 admin@unifiedcalendarview.com</li>
         </ul>
       </Typography>
     </Container>

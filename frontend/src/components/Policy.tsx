@@ -260,7 +260,7 @@ const Policy: React.FC = () => (
         If you have any questions about this Privacy Policy, You can contact us:
       </Typography>
       <ul>
-        <li>By email: admin@unifiedcalendarview.xyz</li>
+        <li>By email: admin@unifiedcalendarview.com</li>
       </ul>
     </Container>
   </Box>
