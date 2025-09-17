@@ -476,6 +476,9 @@ const Landing: React.FC = () => {
       </Box>
       {/* Footer with Policy link */}
       <Box sx={{ bgcolor: 'background.paper', py: 3, textAlign: 'center', borderTop: '1px solid #eee' }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          For any questions feel free to reach out to admin@unifiedcalendarview.com
+        </Typography>
         <Typography variant="body2" color="text.secondary">
           <RouterLink to="/policy" style={{ color: '#667eea', textDecoration: 'underline' }}>
             Privacy Policy
