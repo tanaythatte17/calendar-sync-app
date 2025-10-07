@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-console.log('API_URL:', API_URL); // Debugging line
 // Add timezone to user context
 export interface User {
   _id: string;
@@ -108,7 +107,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         document.cookie = 'jwt=; Max-Age=0; path=/; SameSite=None; Secure';
       } catch {}
-      console.log('Logout successful');
     } catch (error) {
       console.error('Logout failed:', error);
     } finally {
