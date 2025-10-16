@@ -1,6 +1,4 @@
-import User from "../models/userModel.js";
-import bcrypt from "bcrypt";
-import generateTokenAndSetCookie from "../utils/generateToken.js";
+import { signup as signupService, login as loginService, logout as logoutService, getMe as getMeService } from "../services/authService.js";
 
 export const signup = async (req,res) => {
     try{
@@ -12,88 +10,43 @@ export const signup = async (req,res) => {
         if(password !== confirmPassword){
             return res.status(400).json({error:"Passwords don't match"});
         }
-        const user = await User.findOne({email});
-        if(user){
-            return res.status(400).json({error:"User already exists"});
-        }
-        const salt  = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password,salt);
-        const newUser = new User({
-            name,
-            email,
-            password:hashedPassword,
-        });
-        await newUser.save();
-        if(newUser){
-            const token = generateTokenAndSetCookie(newUser._id, res);
-            return res.status(201).json({
-                id: newUser._id,
-                name: newUser.name,
-                email: newUser.email,
-                token // return token for localStorage
-            });
-        }
-        else{
-            return res.statu(400).json({error:"Invalid User Data"});
-        }
+        const result = await signupService(res, { name, email, password });
+        return res.status(201).json(result);
     }
     catch(error){
         console.log(error.message);
-        return res.status(400).json({error:"Internal error in creating user"});
+        const status = error.statusCode || 400;
+        return res.status(status).json({error: error.message || "Internal error in creating user"});
     }
 }
 export const login = async (req,res) => {
     try {
         const {email,password} = req.body;
-        const user = await User.findOne({email});
-        if(!user){
-            return res.status(400).json({error:"Such user does not exist"});
-        }
-        const isPasswordCorrect = await bcrypt.compare(password,user.password);
-        if(!isPasswordCorrect){
-            return res.status(400).json({error:"Incorrect Password"});
-        }
-        const token = generateTokenAndSetCookie(user._id, res);
-        return res.status(200).json({
-            id: user._id,
-            name: user.name,
-            email: user.email,
-            token // return token for localStorage
-        });
+        const result = await loginService(res, { email, password });
+        return res.status(200).json(result);
     } catch (error) {
         console.log(error.message);
-        res.status(400).json({error:"Internal error in creating user"});
+        const status = error.statusCode || 400;
+        res.status(status).json({error: error.message || "Internal error"});
     }
 }
 export const logout = (req,res) => {
     try {
-        // Clear cookie with the SAME attributes used when setting it
-        res.clearCookie("jwt", {
-            httpOnly: true,
-            sameSite: "None",
-            secure: true,
-            path: "/",
-        });
-        // Fallback for some clients that ignore clearCookie with attributes
-        res.cookie("jwt", "", {
-            httpOnly: true,
-            sameSite: "None",
-            secure: true,
-            path: "/",
-            expires: new Date(0)
-        });
-        res.status(200).json({message:"Successfully logged out"});
+        const result = logoutService(res);
+        res.status(200).json(result);
     } catch (error) {
         console.log(error.message);
-        res.status(400).json({error:"Internal error in creating user"});
+        res.status(400).json({error:"Internal error"});
     }
 }
 
 // Returns the authenticated user's data
 export const getMe = (req, res) => {
-    if (!req.user) {
-        return res.status(404).json({ error: "User not found" });
+    try{
+        const result = getMeService(req.user);
+        res.status(200).json(result);
+    } catch(error){
+        const status = error.statusCode || 400;
+        res.status(status).json({ error: error.message || "Error" });
     }
-    const { _id, name, email } = req.user;
-    res.status(200).json({ data: { id: _id, name, email } });
 };

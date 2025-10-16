@@ -1,176 +1,13 @@
-import Event from '../models/eventModel.js';
-import calendarAccount from '../models/calendarAccountModel.js';
-import { refreshCalendarAccessToken } from '../utils/refreshToken.js';
-import { google } from 'googleapis';
-import axios from 'axios';
-import dotenv from 'dotenv';
-dotenv.config();
-
-// Set up Google OAuth2 client
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET
-);
+import { createEvent, updateEvent, deleteEvent, listUserCalendars } from '../services/calendarEventService.js';
 
 // POST /api/calendar/events - Create event in user's calendar
 export const createCalendarEvent = async (req, res) => {
   try {
-    const userId = req.user?._id;
-    console.log('Body is ', req.body);
-    const {
-      title,
-      description,
-      startDateTime,
-      endDateTime,
-      timeZone = 'UTC',
-      location,
-      attendees = [],
-      isAllDay = false,
-      calendarId,
-      provider, // 'google' or 'microsoft'
-      recurrence = null, // For recurring events
-      reminders = []
-    } = req.body;
-
-    // Handle all-day events: automatically set endDateTime to day after startDateTime
-    let finalStartDateTime, finalEndDateTime;
-    
-    if (isAllDay) {
-      // For all-day events, only startDateTime is required
-      if (!startDateTime) {
-        return res.status(400).json({ 
-          error: "Missing required field: startDateTime" 
-        });
-      }
-      
-      // Set start date and automatically calculate end date (next day)
-      const startDate = new Date(startDateTime);
-      const endDate = new Date(startDate);
-      endDate.setDate(startDate.getDate() + 1);
-      
-      finalStartDateTime = startDate.toISOString();
-      finalEndDateTime = endDate.toISOString();
-    } else {
-      // For regular events, both start and end are required
-      if (!startDateTime || !endDateTime) {
-        return res.status(400).json({ 
-          error: "Missing required fields: startDateTime and endDateTime are required for non-all-day events" 
-        });
-      }
-      
-      finalStartDateTime = startDateTime;
-      finalEndDateTime = endDateTime;
-    }
-
-    // Basic validation for remaining required fields
-    if (!userId || !title || !calendarId || !provider) {
-      return res.status(400).json({ 
-        error: "Missing required fields: title, calendarId, provider" 
-      });
-    }
-
-    if (!['google', 'microsoft'].includes(provider)) {
-      return res.status(400).json({ error: "Provider must be 'google' or 'microsoft'" });
-    }
-
-    // Find the user's calendar account
-    const account = await calendarAccount.findOne({
-      userId: userId,
-      provider: provider,
-    });
-
-    if (!account) {
-      return res.status(400).json({ error: `No linked ${provider} account found.` });
-    }
-
-    // Refresh token if expired
-    await refreshTokenIfNeeded(account, provider);
-
-    let createdEvent;
-    if (provider === 'google') {
-      createdEvent = await createGoogleEvent(account, {
-        title,
-        description,
-        startDateTime: finalStartDateTime,
-        endDateTime: finalEndDateTime,
-        timeZone,
-        location,
-        attendees,
-        isAllDay,
-        calendarId,
-        recurrence,
-        reminders
-      });
-    } else if (provider === 'microsoft') {
-      createdEvent = await createMicrosoftEvent(account, {
-        title,
-        description,
-        startDateTime: finalStartDateTime,
-        endDateTime: finalEndDateTime,
-        timeZone,
-        location,
-        attendees,
-        isAllDay,
-        calendarId,
-        recurrence,
-        reminders
-      });
-    }
-
-    // Save the event to our database
-    const savedEvent = await Event.create({
-      calendarAccountId: account._id,
-      calendarId: calendarId,
-      source: provider,
-      externalId: createdEvent.id,
-      title: title,
-      description: description,
-      location: location,
-      start: {
-        dateTime: new Date(finalStartDateTime),
-        timeZone: timeZone,
-      },
-      end: {
-        dateTime: new Date(finalEndDateTime),
-        timeZone: timeZone,
-      },
-      isAllDay: isAllDay,
-      organizer: {
-        email: account.email,
-        name: account.name || account.email,
-      },
-      attendees: attendees.map(a => ({
-        email: a.email,
-        name: a.name,
-        responseStatus: 'needsAction',
-      })),
-      isRecurring: !!recurrence,
-      status: 'confirmed',
-      htmlLink: createdEvent.htmlLink,
-      raw: createdEvent,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    });
-
-    res.status(201).json({
-      message: "Event created successfully",
-      event: {
-        id: savedEvent._id,
-        externalId: createdEvent.id,
-        title: savedEvent.title,
-        startDateTime: savedEvent.start.dateTime,
-        endDateTime: savedEvent.end.dateTime,
-        provider: provider,
-        htmlLink: createdEvent.htmlLink
-      }
-    });
-
+    const result = await createEvent(req.user?._id, req.body);
+    res.status(201).json(result);
   } catch (err) {
-    console.error("Create event failed:", err);
-    res.status(500).json({ 
-      error: "Failed to create event", 
-      details: err.message 
-    });
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: "Failed to create event", details: err.message });
   }
 };
 
@@ -488,114 +325,22 @@ function formatMicrosoftRecurrence(recurrence, eventStartDateTime) {
 // PUT /api/calendar/events/:id - Update existing event
 export const updateCalendarEvent = async (req, res) => {
   try {
-    const { id } = req.params;
-    const userId = req.user?._id;
-    const updateData = req.body;
-
-    // Find the event in our database
-    const event = await Event.findOne({
-      _id: id,
-      calendarAccountId: { 
-        $in: await calendarAccount.find({ userId }).distinct('_id') 
-      }
-    });
-
-    if (!event) {
-      return res.status(404).json({ error: "Event not found" });
-    }
-
-    // Get the calendar account
-    const account = await calendarAccount.findById(event.calendarAccountId);
-    if (!account) {
-      return res.status(404).json({ error: "Calendar account not found" });
-    }
-
-    // Refresh token if needed
-    await refreshTokenIfNeeded(account, event.source);
-
-    let updatedEvent;
-    if (event.source === 'google') {
-      updatedEvent = await updateGoogleEvent(account, event, updateData);
-    } else if (event.source === 'microsoft') {
-      updatedEvent = await updateMicrosoftEvent(account, event, updateData);
-    }
-
-    // Update our database
-    const updates = {};
-    if (updateData.title) updates.title = updateData.title;
-    if (updateData.description) updates.description = updateData.description;
-    if (updateData.location) updates.location = updateData.location;
-    if (updateData.startDateTime) {
-      updates['start.dateTime'] = new Date(updateData.startDateTime);
-    }
-    if (updateData.endDateTime) {
-      updates['end.dateTime'] = new Date(updateData.endDateTime);
-    }
-    updates.updatedAt = new Date();
-
-    await Event.findByIdAndUpdate(id, { $set: updates });
-
-    res.json({
-      message: "Event updated successfully",
-      event: updatedEvent
-    });
-
+    const result = await updateEvent(req.user?._id, req.params.id, req.body);
+    res.json(result);
   } catch (err) {
-    console.error("Update event failed:", err);
-    res.status(500).json({ 
-      error: "Failed to update event", 
-      details: err.message 
-    });
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: "Failed to update event", details: err.message });
   }
 };
 
 // DELETE /api/calendar/events/:id - Delete event
 export const deleteCalendarEvent = async (req, res) => {
   try {
-    const { id } = req.params;
-    const userId = req.user?._id;
-
-    // Find the event in our database
-    const event = await Event.findOne({
-      _id: id,
-      calendarAccountId: { 
-        $in: await calendarAccount.find({ userId }).distinct('_id') 
-      }
-    });
-
-    if (!event) {
-      return res.status(404).json({ error: "Event not found" });
-    }
-
-    // Get the calendar account
-    const account = await calendarAccount.findById(event.calendarAccountId);
-    if (!account) {
-      return res.status(404).json({ error: "Calendar account not found" });
-    }
-
-    // Refresh token if needed
-    await refreshTokenIfNeeded(account, event.source);
-
-    // Delete from external calendar
-    if (event.source === 'google') {
-      await deleteGoogleEvent(account, event);
-    } else if (event.source === 'microsoft') {
-      await deleteMicrosoftEvent(account, event);
-    }
-
-    // Delete from our database
-    await Event.findByIdAndDelete(id);
-
-    res.json({
-      message: "Event deleted successfully"
-    });
-
+    const result = await deleteEvent(req.user?._id, req.params.id);
+    res.json(result);
   } catch (err) {
-    console.error("Delete event failed:", err);
-    res.status(500).json({ 
-      error: "Failed to delete event", 
-      details: err.message 
-    });
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: "Failed to delete event", details: err.message });
   }
 };
 
@@ -697,79 +442,11 @@ async function deleteMicrosoftEvent(account, event) {
 // GET /api/calendar/calendars - Get user's calendars (for dropdown selection)
 export const getUserCalendars = async (req, res) => {
   try {
-    const userId = req.user?._id;
-    
-    if (!userId) {
-      return res.status(400).json({ error: "User ID not found" });
-    }
-
-    // Get all calendar accounts for this user
-    const accounts = await calendarAccount.find({ userId });
-    
-    if (!accounts || accounts.length === 0) {
-      return res.status(404).json({ error: "No calendar accounts found" });
-    }
-
-    const calendars = [];
-    
-    for (const account of accounts) {
-      // Refresh token if needed
-      await refreshTokenIfNeeded(account, account.provider);
-      
-      if (account.provider === 'google') {
-        const googleCalendars = await getGoogleCalendars(account);
-        calendars.push(...googleCalendars);
-      } else if (account.provider === 'microsoft') {
-        const microsoftCalendars = await getMicrosoftCalendars(account);
-        calendars.push(...microsoftCalendars);
-      }
-    }
-
-    res.json({
-      calendars: calendars
-    });
-
+    const result = await listUserCalendars(req.user?._id);
+    res.json(result);
   } catch (err) {
-    console.error("Get calendars failed:", err);
-    res.status(500).json({ 
-      error: "Failed to get calendars", 
-      details: err.message 
-    });
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: "Failed to get calendars", details: err.message });
   }
 };
-
-// Get Google calendars
-async function getGoogleCalendars(account) {
-  oauth2Client.setCredentials({
-    access_token: account.accessToken,
-    refresh_token: account.refreshToken,
-  });
-
-  const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-  const response = await calendar.calendarList.list();
-  
-  return (response.data.items || []).map(cal => ({
-    id: cal.id,
-    name: cal.summary,
-    provider: 'google',
-    color: cal.backgroundColor,
-    accessRole: cal.accessRole,
-    primary: cal.primary,
-    canCreateEvents: ['owner', 'writer'].includes(cal.accessRole)
-  }));
-}
-
-// Get Microsoft calendars
-async function getMicrosoftCalendars(account) {
-  const headers = { Authorization: `Bearer ${account.accessToken}` };
-  const response = await axios.get('https://graph.microsoft.com/v1.0/me/calendars', { headers });
-  
-  return (response.data.value || []).map(cal => ({
-    id: cal.id,
-    name: cal.name,
-    provider: 'microsoft',
-    color: cal.color,
-    canCreateEvents: true, // Microsoft calendars typically allow creation
-    isDefaultCalendar: cal.isDefaultCalendar
-  }));
-} 
+ 

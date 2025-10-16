@@ -1,7 +1,7 @@
-import { google } from "googleapis";
+import {google} from "googleapis";
 import CalendarAccount from "../models/calendarAccountModel.js";
 import dotenv from "dotenv";
-import { performIncrementalSync, updateGoogleCalendarList } from "./googleController.js";
+import { performIncrementalSync, updateGoogleCalendarList } from "../services/googleService.js";
 
 dotenv.config();
 export const googleEventsWebhookHandler = async (req, res) => {
@@ -20,6 +20,7 @@ export const googleEventsWebhookHandler = async (req, res) => {
         console.log("Decoded payload:", decodedPayload);
         calendarId = decodedPayload.calendarId;
         accountId = decodedPayload.accountId;
+        console.log("Extracted calendarId:", calendarId, "accountId:", accountId);
     } catch (e) {
         console.error("Invalid base64 JSON in x-goog-channel-token:", e);
         return res.status(400).send("Invalid token");

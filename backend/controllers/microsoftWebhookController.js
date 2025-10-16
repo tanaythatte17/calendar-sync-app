@@ -1,6 +1,6 @@
 import calendarAccount from "../models/calendarAccountModel.js";
 import { refreshCalendarAccessToken } from "../utils/refreshToken.js";
-import { updateMicrosoftCalendarList, performMicrosoftIncrementalSync, performMicrosoftFullSync } from "./microsoftController.js";
+import { updateMicrosoftCalendarList, performMicrosoftIncrementalSync, performMicrosoftFullSync } from "../services/microsoftService.js";
 
 export const microsoftEventsWebhookHandler = async (req, res) => {
     if (req.query.validationToken) {
