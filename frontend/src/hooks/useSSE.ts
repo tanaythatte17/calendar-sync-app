@@ -13,7 +13,7 @@ interface SSEEvent {
 
 interface UseSSEOptions {
   onEvent?: (event: SSEEvent) => void;
-  onCalendarListUpdate?: (data: any, action: string) => void;
+  onCalendarListUpdate?: (data: any) => void;
   onSyncStatus?: (status: string) => void;
 }
 
@@ -68,7 +68,7 @@ export const useSSE = (options: UseSSEOptions = {}) => {
             break;
             
           case 'calendarList':
-            options.onCalendarListUpdate?.(data.data, data.action || 'updated');
+            options.onCalendarListUpdate?.(data.data);
             break;
             
           case 'syncStatus':

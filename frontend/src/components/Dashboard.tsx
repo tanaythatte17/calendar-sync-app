@@ -136,7 +136,7 @@ const Dashboard: React.FC = () => {
         setEvents(prevEvents => prevEvents.filter(e => e._id !== event.data._id));
       }
     },
-    onCalendarListUpdate: (calendarData, action) => {
+    onCalendarListUpdate: (calendarData) => {
       // Update accounts with new calendar list
       setAccounts(prevAccounts => 
         prevAccounts.map(account => {
