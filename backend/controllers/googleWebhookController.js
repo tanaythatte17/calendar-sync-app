@@ -20,7 +20,6 @@ export const googleEventsWebhookHandler = async (req, res) => {
         console.log("Decoded payload:", decodedPayload);
         calendarId = decodedPayload.calendarId;
         accountId = decodedPayload.accountId;
-        console.log("Extracted calendarId:", calendarId, "accountId:", accountId);
     } catch (e) {
         console.error("Invalid base64 JSON in x-goog-channel-token:", e);
         return res.status(400).send("Invalid token");

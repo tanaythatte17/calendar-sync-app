@@ -43,13 +43,13 @@ export async function callback(query, cookies, clearCookie, redirect) {
     userId = cookies.oauth_user_id;
     clearCookie("oauth_user_id");
   }
-  console.log('User id is ', userId);
+
   if (!userId) {
     const err = new Error("Unauthorized - No user ID provided");
     err.statusCode = 401;
     throw err;
   }
-  console.log('Before post request');
+  
   let tokenRes;
   try{
       tokenRes = await axios.post(
@@ -70,7 +70,6 @@ export async function callback(query, cookies, clearCookie, redirect) {
   const tokens = tokenRes.data;
   const userRes = await axios.get('https://graph.microsoft.com/v1.0/me', { headers: { Authorization: `Bearer ${tokens.access_token}` } });
   const userEmail = userRes.data.mail || userRes.data.userPrincipalName;
-  console.log('User email is ', userEmail);
   const existingAccount = await calendarAccount.findOne({ userId, email: userEmail, provider: 'microsoft' });
   if (existingAccount) {
     existingAccount.accessToken = tokens.access_token;

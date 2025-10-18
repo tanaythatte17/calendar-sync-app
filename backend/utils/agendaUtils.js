@@ -12,6 +12,7 @@ const agenda = new Agenda({
 
 // Google notification renewal job
 agenda.define("renewGoogleNotification", async (job) => {
+  console.log('Inside agenda google renewal job');
   const { accountId, channelType, calendarId, channelId, resourceId } = job.attrs.data;
   console.log(`🔄 Renewing Google ${channelType} notification for account ${accountId}...`);
 
