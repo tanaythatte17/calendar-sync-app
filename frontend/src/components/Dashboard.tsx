@@ -5,6 +5,7 @@ import CalendarComponent from './Calendar';
 import CalendarAccounts from './CalendarAccounts';
 import EventCreationModal from './EventCreationModal';
 import EventDetailModal from './EventDetailModal';
+import { useSSE } from '../hooks/useSSE';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -113,6 +114,49 @@ const Dashboard: React.FC = () => {
   // Simplified lazy loading state - track loaded ranges with strings for easier comparison
   const [loadedRanges, setLoadedRanges] = useState<string[]>([]);
   const loadingRangesRef = useRef<Set<string>>(new Set());
+
+  // SSE hook for real-time updates
+  useSSE({
+    onEvent: (event) => {
+      // Handle individual event updates
+      if (event.action === 'added' || event.action === 'updated') {
+        setEvents(prevEvents => {
+          const existingIndex = prevEvents.findIndex(e => e._id === event.data._id);
+          if (existingIndex >= 0) {
+            // Update existing event
+            const updated = [...prevEvents];
+            updated[existingIndex] = event.data;
+            return updated;
+          } else {
+            // Add new event
+            return [...prevEvents, event.data];
+          }
+        });
+      } else if (event.action === 'deleted') {
+        setEvents(prevEvents => prevEvents.filter(e => e._id !== event.data._id));
+      }
+    },
+    onCalendarListUpdate: (calendarData, action) => {
+      // Update accounts with new calendar list
+      setAccounts(prevAccounts => 
+        prevAccounts.map(account => {
+          if (account.provider === calendarData.provider && account.email === calendarData.email) {
+            return { ...account, calendarList: calendarData.calendarList };
+          }
+          return account;
+        })
+      );
+    },
+    onSyncStatus: (status) => {
+      // If sync completed, refresh events
+      if (status === 'completed') {
+        setLoadedRanges([]);
+        setEvents([]);
+        loadingRangesRef.current.clear();
+        fetchInitialData();
+      }
+    },
+  });
 
   useEffect(() => {
     const found = userTimeZones.find(tz => tz.value === user?.timezone);

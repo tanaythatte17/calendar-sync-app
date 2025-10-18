@@ -1,6 +1,7 @@
 import calendarAccount from "../models/calendarAccountModel.js";
 import { refreshCalendarAccessToken } from "../utils/refreshToken.js";
 import { updateMicrosoftCalendarList, performMicrosoftIncrementalSync, performMicrosoftFullSync } from "../services/microsoftService.js";
+import sseService from "../services/sseService.js";
 
 export const microsoftEventsWebhookHandler = async (req, res) => {
     if (req.query.validationToken) {
@@ -79,8 +80,9 @@ export const microsoftEventsWebhookHandler = async (req, res) => {
                 };
 
                 try {
+                    let eventsProcessed = 0;
                     if (deltaLink) {
-                        const { newDeltaLink } = await performMicrosoftIncrementalSync(
+                        const { eventsProcessed: incrementalEvents, newDeltaLink } = await performMicrosoftIncrementalSync(
                             calendarId,
                             deltaLink,
                             headers,
@@ -88,18 +90,28 @@ export const microsoftEventsWebhookHandler = async (req, res) => {
                             startTime,
                             endTime
                         );
+                        eventsProcessed = incrementalEvents;
                         await persistDelta(newDeltaLink);
                     } else {
                         // If no deltaLink yet, perform a full sync to initialize it
-                        const { newDeltaLink } = await performMicrosoftFullSync(
+                        const { eventsProcessed: fullEvents, newDeltaLink } = await performMicrosoftFullSync(
                             calendarId,
                             headers,
                             account._id,
                             startTime,
                             endTime
                         );
+                        eventsProcessed = fullEvents;
                         await persistDelta(newDeltaLink);
                     }
+                    
+                    // Send SSE update to user
+                    sseService.sendSyncStatus(
+                        account.userId.toString(),
+                        'completed',
+                        `Synced ${eventsProcessed} events from Microsoft Calendar`,
+                        { calendarId, eventsProcessed, provider: 'microsoft' }
+                    );
                 } catch (err) {
                     // If the deltaLink is expired (HTTP 410), fallback to full
                     if (err?.response?.status === 410) {
@@ -177,6 +189,13 @@ export const microsoftCalendarListWebhookHandler = async (req, res) => {
 
                 try {
                     await updateMicrosoftCalendarList(account, headers);
+                    
+                    // Send SSE update to user
+                    sseService.sendCalendarListUpdate(
+                        account.userId.toString(),
+                        account.calendarList,
+                        'updated'
+                    );
                 } catch (err) {
                     console.error('Failed to update Microsoft calendar list from webhook:', err.message);
                 }

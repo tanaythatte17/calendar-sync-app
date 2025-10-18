@@ -1,6 +1,6 @@
 import Agenda from "agenda";
-import { renewNotification } from "../controllers/googleController.js";
-import { renewMicrosoftNotification } from "../controllers/microsoftController.js";
+import { renewNotification } from "../services/googleService.js";
+import { renewMicrosoftNotification } from "../services/microsoftService.js";
 import dotenv from "dotenv";
 
 dotenv.config();

@@ -2,6 +2,7 @@ import {google} from "googleapis";
 import CalendarAccount from "../models/calendarAccountModel.js";
 import dotenv from "dotenv";
 import { performIncrementalSync, updateGoogleCalendarList } from "../services/googleService.js";
+import sseService from "../services/sseService.js";
 
 dotenv.config();
 export const googleEventsWebhookHandler = async (req, res) => {
@@ -74,6 +75,15 @@ export const googleEventsWebhookHandler = async (req, res) => {
     console.log(
       `✅ Synced ${eventsProcessed} events for calendarId: ${calendarId}`
     );
+    
+    // Send SSE update to user
+    sseService.sendSyncStatus(
+      calendarAccount.userId.toString(),
+      'completed',
+      `Synced ${eventsProcessed} events from Google Calendar`,
+      { calendarId, eventsProcessed, provider: 'google' }
+    );
+    
     return res.status(200).send("Sync complete");
   } catch (err) {
     console.error("❌ Webhook processing error:", err?.response?.data || err);
@@ -103,6 +113,13 @@ export const googleCalendarListWebhookHandler = async (req, res) => {
 
     // Step 3: Perform calendar list sync
     await updateGoogleCalendarList(calendarAccount);
+
+    // Send SSE update to user
+    sseService.sendCalendarListUpdate(
+      calendarAccount.userId.toString(),
+      calendarAccount.calendarList,
+      'updated'
+    );
 
     res.status(200).send("OK");
   } catch (error) {
