@@ -72,8 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email,
         password
       });
-      const { _id, name, email: userEmail, token } = response.data;
-      localStorage.setItem('token', token); // store for OAuth state
+      const { _id, name, email: userEmail} = response.data;
       setUser({ _id, name, email: userEmail });
       await fetchUserProfile(); // Fetch user profile after successful login
     } catch (error) {
@@ -90,8 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password,
         confirmPassword
       });
-      const { _id, name: userName, email: userEmail, token } = response.data;
-      localStorage.setItem('token', token); // store for OAuth state
+      const { _id, name: userName, email: userEmail,} = response.data;
       setUser({ _id, name: userName, email: userEmail });
       await fetchUserProfile(); // Fetch user profile after successful registration
     } catch (error) {

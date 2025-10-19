@@ -24,8 +24,7 @@ export async function signup(res, { name, email, password }) {
   return {
     id: newUser._id,
     name: newUser.name,
-    email: newUser.email,
-    token,
+    email: newUser.email, 
   };
 }
 
@@ -49,7 +48,6 @@ export async function login(res, { email, password }) {
     id: user._id,
     name: user.name,
     email: user.email,
-    token,
   };
 }
 
