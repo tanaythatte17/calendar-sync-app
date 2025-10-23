@@ -39,7 +39,7 @@ export async function connect(userIdFromQuery, state, cookies, setCookie, redire
     redirect_uri: process.env.GOOGLE_REDIRECT_URI,
     state: state || undefined
   });
-  redirect(url);
+  return url;
 }
 
 export async function callback(code, state, cookies, clearCookie, redirect) {

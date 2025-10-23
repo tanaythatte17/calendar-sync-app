@@ -10,7 +10,7 @@ import { scheduleMicrosoftRenewal } from '../utils/agendaUtils.js';
 
 dotenv.config();
 
-export function connect(userIdFromQuery, state, setCookie, redirect) {
+export async function connect(userIdFromQuery, state, setCookie, redirect) {
   const userId = state ? null : (userIdFromQuery);
   if (!state) {
     setCookie("oauth_user_id", userId, {
@@ -29,7 +29,7 @@ export function connect(userIdFromQuery, state, setCookie, redirect) {
     scope: 'openid profile email offline_access User.Read Calendars.Read Calendars.ReadWrite',
     state: state || undefined
   });
-  redirect(`https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`);
+  return `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`;
 }
 
 export async function callback(query, cookies, clearCookie, redirect) {

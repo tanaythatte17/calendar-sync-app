@@ -2,7 +2,8 @@ import { connect, callback, sync, createGoogleNotifications, renewNotification }
 
 export const connectGoogle = async (req, res) => {
   try{
-    await connect(req.query.userId || req.user?._id, req.query.state, req.cookies, res.cookie.bind(res), res.redirect.bind(res));
+    const url = await connect(req.query.userId || req.user?._id, req.token, req.cookies, res.cookie.bind(res), res.redirect.bind(res));
+    res.json({ url });
   } catch(err){
     res.status(400).json({ error: 'Failed to start Google connect' });
   }

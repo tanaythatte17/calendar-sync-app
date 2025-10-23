@@ -1,8 +1,9 @@
 import { connect, callback, sync, createMicrosoftNotifications, renewMicrosoftNotification } from "../services/microsoftService.js";
 
-export const connectMicrosoft = (req, res) => {
+export const connectMicrosoft = async (req, res) => {
   try{
-    connect(req.query.userId || req.user?._id, req.query.state, res.cookie.bind(res), res.redirect.bind(res));
+    const url = await connect(req.query.userId || req.user?._id, req.token, res.cookie.bind(res), res.redirect.bind(res));
+    res.json({ url });
   } catch(err){
     res.status(400).json({ error: 'Failed to start Microsoft connect' });
   }

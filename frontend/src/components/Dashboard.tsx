@@ -272,38 +272,41 @@ const Dashboard: React.FC = () => {
     setSelectedCalendars(newSelected);
   }, [accounts]);
 
-  const getCookie = (name: string): string | null => {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) {
-      return parts.pop()?.split(';').shift() || null;
-    }
-    return null;
-  };
-
   const handleConnectGoogle = async () => {
     try {
-      const jwt = getCookie('jwt');
-      if (!jwt) {
-        setError('No authentication token found. Please log in again.');
-        return;
+
+      const response = await fetch(`${API_URL}/google/auth`, {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (data.url) {
+        // Redirect user from frontend
+        window.location.href = data.url;
+      } else {
+        setError('Failed to get authorization URL');
       }
-      window.location.href = `${API_URL}/google/auth?state=${encodeURIComponent(jwt)}`;
     } catch (err) {
+      console.error(err);
       setError('Failed to connect Google Calendar');
     }
   };
 
   const handleConnectMicrosoft = async () => {
     try {
-      const jwt = getCookie('jwt');
-      if (!jwt) {
-        setError('No authentication token found. Please log in again.');
-        return;
+
+      const response = await fetch(`${API_URL}/microsoft/auth`, {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (data.url) {
+        // Redirect user from frontend
+        window.location.href = data.url;
+      } else {
+        setError('Failed to get authorization URL');
       }
-      window.location.href = `${API_URL}/microsoft/auth?state=${encodeURIComponent(jwt)}`;
     } catch (err) {
-      setError('Failed to connect Microsoft Calendar');
+      console.error(err);
+      setError('Failed to connect Google Calendar');
     }
   };
 

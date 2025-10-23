@@ -17,16 +17,6 @@ interface UseSSEOptions {
   onSyncStatus?: (status: string) => void;
 }
 
-const getCookie = (name: string): string | null => {
-  const value = `; ${document.cookie}`;
-  console.log('Document cookies:', value);
-  const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) {
-    return parts.pop()?.split(';').shift() || null;
-  }
-  return null;
-};
-
 export const useSSE = (options: UseSSEOptions = {}) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
@@ -42,21 +32,11 @@ export const useSSE = (options: UseSSEOptions = {}) => {
     }
 
     setConnectionStatus('connecting');
-    
-    const token = getCookie('jwt');
-    console.log('Connecting to SSE with token:', token);
-    if (!token) {
-      console.warn('No auth token found, cannot connect to SSE');
-      setConnectionStatus('error');
-      return;
-    }
 
     const eventSource = new EventSourcePolyfill(
       `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/sse/events`,
       {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        withCredentials: true,
       }
     );
 
