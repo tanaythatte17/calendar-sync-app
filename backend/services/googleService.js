@@ -180,6 +180,7 @@ export async function createGoogleNotifications(userId, userEmail) {
   const expirationTime = Date.now() + (ttlDays * 24 * 60 * 60 * 1000);
 
   const calendarListChannelId = uuidv4();
+  console.log('Webhook Url is : ',process.env.WEBHOOK_BASE_URL);
   const calendarListChannel = await calendar.calendarList.watch({
     requestBody: {
       id: calendarListChannelId,

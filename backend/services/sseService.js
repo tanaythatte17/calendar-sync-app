@@ -17,7 +17,6 @@ class SSEService {
     
     this.clients.get(userId).add(client);
     
-    console.log(`🟢 Client ${clientId} connected for user ${userId}, total clients: ${this.getTotalClients()}`);
     
     return client;
   }
@@ -30,7 +29,6 @@ class SSEService {
     for (const client of userClients) {
       if (client.id === clientId) {
         userClients.delete(client);
-        console.log(`🔴 Client ${clientId} disconnected for user ${userId}`);
         break;
       }
     }
