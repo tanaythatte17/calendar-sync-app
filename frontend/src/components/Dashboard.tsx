@@ -272,9 +272,18 @@ const Dashboard: React.FC = () => {
     setSelectedCalendars(newSelected);
   }, [accounts]);
 
+  const getCookie = (name: string): string | null => {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) {
+      return parts.pop()?.split(';').shift() || null;
+    }
+    return null;
+  };
+
   const handleConnectGoogle = async () => {
     try {
-      const jwt = localStorage.getItem('token');
+      const jwt = getCookie('jwt');
       if (!jwt) {
         setError('No authentication token found. Please log in again.');
         return;
@@ -287,7 +296,7 @@ const Dashboard: React.FC = () => {
 
   const handleConnectMicrosoft = async () => {
     try {
-      const jwt = localStorage.getItem('token');
+      const jwt = getCookie('jwt');
       if (!jwt) {
         setError('No authentication token found. Please log in again.');
         return;
