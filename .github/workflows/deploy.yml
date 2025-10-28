@@ -30,6 +30,7 @@ jobs:
           cd frontend
           npm ci
           npm run build
+          npm run generate-sitemap
           cd ..
           mv frontend/dist frontend-dist
 
