@@ -5,7 +5,7 @@ const links = [
   { url: '/', changefreq: 'daily', priority: 1.0 },
 ];
 
-const sitemap = new SitemapStream({ hostname: 'https://yourdomain.com' });
+const sitemap = new SitemapStream({ hostname: 'https://unifiedcalendarview.com' });
 
 streamToPromise(sitemap)
   .then((data) => {
