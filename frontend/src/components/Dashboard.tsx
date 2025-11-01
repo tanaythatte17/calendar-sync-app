@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useRef} from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../contexts/AuthContext';
 import CalendarComponent from './Calendar';
@@ -112,7 +112,6 @@ const Dashboard: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
 
   // Simplified lazy loading state - track loaded ranges with strings for easier comparison
-  const [loadedRanges, setLoadedRanges] = useState<string[]>([]);
   const loadedMinDateRef = useRef<Date | null>(null);
   const loadedMaxDateRef = useRef<Date | null>(null);
   const loadingRangesRef = useRef<Set<string>>(new Set());
@@ -163,7 +162,6 @@ const Dashboard: React.FC = () => {
     onSyncStatus: (status) => {
       if (status === 'completed') {
         // ✅ Reset all state and refs properly
-        setLoadedRanges([]);
         setEvents([]);
         loadingRangesRef.current.clear();
         loadedRangesRef.current.clear(); // ✅ Added this
@@ -265,14 +263,11 @@ const Dashboard: React.FC = () => {
     const monthsFromMax = (maxLoaded.getFullYear() - viewMonth.getFullYear()) * 12 + 
                           (maxLoaded.getMonth() - viewMonth.getMonth());
 
-    let didLoad = false;
-
     // If within 2 months of the minimum boundary, load 3 more months before
     if (monthsFromMin <= 2) {
       const newStart = new Date(minLoaded.getFullYear(), minLoaded.getMonth() - 3, 1);
       const newEnd = new Date(minLoaded.getFullYear(), minLoaded.getMonth() - 1, 1);
       await loadEventsForRange(newStart, newEnd);
-      didLoad = true;
     }
 
     // If within 2 months of the maximum boundary, load 3 more months after
@@ -280,7 +275,6 @@ const Dashboard: React.FC = () => {
       const newStart = new Date(maxLoaded.getFullYear(), maxLoaded.getMonth() + 1, 1);
       const newEnd = new Date(maxLoaded.getFullYear(), maxLoaded.getMonth() + 3, 1);
       await loadEventsForRange(newStart, newEnd);
-      didLoad = true;
     }
   }, [loadEventsForRange]);
 
@@ -396,7 +390,6 @@ const Dashboard: React.FC = () => {
       alert(`${provider.charAt(0).toUpperCase() + provider.slice(1)} calendar synced!`);
       
       // ✅ Reset all state and refs properly
-      setLoadedRanges([]);
       setEvents([]);
       loadingRangesRef.current.clear();
       loadedRangesRef.current.clear();
@@ -534,7 +527,6 @@ const Dashboard: React.FC = () => {
                 setSelectedEvent(event);
               }}
               accounts={accounts}
-              onLoadEvents={loadEventsForRange}
               loading={loading}
               onViewDateChange={setCurrentViewDate}
             />

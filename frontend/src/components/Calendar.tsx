@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback} from 'react';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
+import { format, startOfWeek, endOfWeek, eachDayOfInterval} from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { FaChevronLeft, FaChevronRight, FaCalendar, FaList, FaCalendarWeek } from 'react-icons/fa';
 
@@ -67,7 +67,6 @@ interface CalendarProps {
   onCreateEvent: () => void;
   onEventClick: (event: Event) => void;
   accounts: CalendarAccount[];
-  onLoadEvents: (startDate: Date, endDate: Date) => Promise<Event[]>;
   loading?: boolean;
   onViewDateChange?: (date: Date) => void;
 }
@@ -93,7 +92,6 @@ const CalendarComponent: React.FC<CalendarProps> = ({
   onCreateEvent,
   onEventClick,
   accounts,
-  onLoadEvents,
   onViewDateChange
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
