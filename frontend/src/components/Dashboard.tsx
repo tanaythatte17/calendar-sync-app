@@ -113,31 +113,44 @@ const Dashboard: React.FC = () => {
 
   // Simplified lazy loading state - track loaded ranges with strings for easier comparison
   const [loadedRanges, setLoadedRanges] = useState<string[]>([]);
+  const loadedMinDateRef = useRef<Date | null>(null);
+  const loadedMaxDateRef = useRef<Date | null>(null);
   const loadingRangesRef = useRef<Set<string>>(new Set());
+  const loadedRangesRef = useRef<Set<string>>(new Set());
+  const eventsRef = useRef<Event[]>([]);
+  const isInitialLoadRef = useRef(false);
+  const [currentViewDate, setCurrentViewDate] = useState<Date>(new Date());
+
+  useEffect(() => {
+    eventsRef.current = events;
+  }, [events]);
 
   // SSE hook for real-time updates
   useSSE({
     onEvent: (event) => {
-      // Handle individual event updates
       if (event.action === 'added' || event.action === 'updated') {
         setEvents(prevEvents => {
           const existingIndex = prevEvents.findIndex(e => e._id === event.data._id);
           if (existingIndex >= 0) {
-            // Update existing event
             const updated = [...prevEvents];
             updated[existingIndex] = event.data;
+            eventsRef.current = updated; // ✅ Update ref
             return updated;
           } else {
-            // Add new event
-            return [...prevEvents, event.data];
+            const newEvents = [...prevEvents, event.data];
+            eventsRef.current = newEvents; // ✅ Update ref
+            return newEvents;
           }
         });
       } else if (event.action === 'deleted') {
-        setEvents(prevEvents => prevEvents.filter(e => e._id !== event.data._id));
+        setEvents(prevEvents => {
+          const filtered = prevEvents.filter(e => e._id !== event.data._id);
+          eventsRef.current = filtered; // ✅ Update ref
+          return filtered;
+        });
       }
     },
     onCalendarListUpdate: (calendarData) => {
-      // Update accounts with new calendar list
       setAccounts(prevAccounts => 
         prevAccounts.map(account => {
           if (account.provider === calendarData.provider && account.email === calendarData.email) {
@@ -148,11 +161,15 @@ const Dashboard: React.FC = () => {
       );
     },
     onSyncStatus: (status) => {
-      // If sync completed, refresh events
       if (status === 'completed') {
+        // ✅ Reset all state and refs properly
         setLoadedRanges([]);
         setEvents([]);
         loadingRangesRef.current.clear();
+        loadedRangesRef.current.clear(); // ✅ Added this
+        loadedMinDateRef.current = null; // ✅ Added this
+        loadedMaxDateRef.current = null; // ✅ Added this
+        isInitialLoadRef.current = false; // ✅ Reset this
         fetchInitialData();
       }
     },
@@ -169,27 +186,24 @@ const Dashboard: React.FC = () => {
     setTimeout(() => setTzSaveStatus(null), 2000);
   };
 
-  // Create a normalized range key for consistent tracking
   const createRangeKey = (startDate: Date, endDate: Date): string => {
     const start = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-    const end = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 0);
+    const end = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
     return `${start.getFullYear()}-${start.getMonth()}_${end.getFullYear()}-${end.getMonth()}`;
   };
 
-  // Enhanced function to load events for a specific date range
+  // Simplified loadEventsForRange
   const loadEventsForRange = useCallback(async (startDate: Date, endDate: Date): Promise<Event[]> => {
     const rangeKey = createRangeKey(startDate, endDate);
     
-    // Check if already loading or loaded
-    if (loadingRangesRef.current.has(rangeKey) || loadedRanges.includes(rangeKey)) {
-      return events.filter(event => {
+    if (loadingRangesRef.current.has(rangeKey) || loadedRangesRef.current.has(rangeKey)) {
+      return eventsRef.current.filter(event => {
         const eventDate = new Date(event.start.dateTime);
         return eventDate >= startDate && eventDate <= endDate;
       });
     }
 
     try {
-      // Mark as loading
       loadingRangesRef.current.add(rangeKey);
       
       const response = await api.get(`${API_URL}/user/events`, {
@@ -201,52 +215,95 @@ const Dashboard: React.FC = () => {
 
       const newEvents = response.data;
       
-      // Update events with new data, avoiding duplicates
       setEvents(prevEvents => {
         const eventMap = new Map(prevEvents.map(event => [event._id, event]));
         newEvents.forEach((event: Event) => {
           eventMap.set(event._id, event);
         });
-        return Array.from(eventMap.values());
+        const updatedEvents = Array.from(eventMap.values());
+        eventsRef.current = updatedEvents; // ✅ Update ref
+        return updatedEvents;
       });
 
-      // Mark range as loaded
-      setLoadedRanges(prev => {
-        if (!prev.includes(rangeKey)) {
-          return [...prev, rangeKey];
-        }
-        return prev;
-      });
+      if (!loadedMinDateRef.current || startDate < loadedMinDateRef.current) {
+        loadedMinDateRef.current = startDate;
+      }
+      if (!loadedMaxDateRef.current || endDate > loadedMaxDateRef.current) {
+        loadedMaxDateRef.current = endDate;
+      }
+
+      loadedRangesRef.current.add(rangeKey);
 
       return newEvents;
     } catch (err) {
       console.error('Error loading events for range:', err);
       return [];
     } finally {
-      // Remove from loading set
       loadingRangesRef.current.delete(rangeKey);
     }
-  }, [api, loadedRanges, events]);
+  }, []);
 
-  // Stable loadEventsForRange function for Calendar component
-  const stableLoadEventsForRange = useMemo(() => {
-    return (startDate: Date, endDate: Date) => loadEventsForRange(startDate, endDate);
+  // Check if we need to load more data based on current view
+  const checkAndLoadIfNeeded = useCallback(async (viewDate: Date) => {
+    // Skip if initial load hasn't completed yet
+    if (!isInitialLoadRef.current) {
+      return;
+    }
+
+    // If no data loaded yet, this shouldn't happen after initial load
+    if (!loadedMinDateRef.current || !loadedMaxDateRef.current) {
+      return;
+    }
+
+    const viewMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+    const minLoaded = new Date(loadedMinDateRef.current.getFullYear(), loadedMinDateRef.current.getMonth(), 1);
+    const maxLoaded = new Date(loadedMaxDateRef.current.getFullYear(), loadedMaxDateRef.current.getMonth(), 1);
+
+    // Calculate month difference
+    const monthsFromMin = (viewMonth.getFullYear() - minLoaded.getFullYear()) * 12 + 
+                          (viewMonth.getMonth() - minLoaded.getMonth());
+    const monthsFromMax = (maxLoaded.getFullYear() - viewMonth.getFullYear()) * 12 + 
+                          (maxLoaded.getMonth() - viewMonth.getMonth());
+
+    let didLoad = false;
+
+    // If within 2 months of the minimum boundary, load 3 more months before
+    if (monthsFromMin <= 2) {
+      const newStart = new Date(minLoaded.getFullYear(), minLoaded.getMonth() - 3, 1);
+      const newEnd = new Date(minLoaded.getFullYear(), minLoaded.getMonth() - 1, 1);
+      await loadEventsForRange(newStart, newEnd);
+      didLoad = true;
+    }
+
+    // If within 2 months of the maximum boundary, load 3 more months after
+    if (monthsFromMax <= 2) {
+      const newStart = new Date(maxLoaded.getFullYear(), maxLoaded.getMonth() + 1, 1);
+      const newEnd = new Date(maxLoaded.getFullYear(), maxLoaded.getMonth() + 3, 1);
+      await loadEventsForRange(newStart, newEnd);
+      didLoad = true;
+    }
   }, [loadEventsForRange]);
+
+  useEffect(() => {
+    checkAndLoadIfNeeded(currentViewDate);
+  }, [currentViewDate, checkAndLoadIfNeeded]);
 
   // Initial data fetch
   const fetchInitialData = useCallback(async () => {
     setLoading(true);
     try {
-      // Load accounts first
       const accountsRes = await api.get(`${API_URL}/user/accounts`);
       setAccounts(accountsRes.data);
 
       // Load initial events range (current month ±3 months)
       const now = new Date();
       const initialStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-      const initialEnd = new Date(now.getFullYear(), now.getMonth() + 4, 0); // Last day of +3 month
+      const initialEnd = new Date(now.getFullYear(), now.getMonth() + 3, 1); // ✅ Changed from +4 to +3
       
       await loadEventsForRange(initialStart, initialEnd);
+      
+      // ✅ Mark initial load as complete
+      isInitialLoadRef.current = true;
       
     } catch (err) {
       setError('Failed to load calendar data');
@@ -254,7 +311,7 @@ const Dashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [loadEventsForRange]);
+  }, [api, loadEventsForRange]); // ✅ Now safe since loadEventsForRange is stable
 
   // Load initial data on mount
   useEffect(() => {
@@ -338,10 +395,15 @@ const Dashboard: React.FC = () => {
       setError('');
       alert(`${provider.charAt(0).toUpperCase() + provider.slice(1)} calendar synced!`);
       
-      // Clear loaded ranges and events to force a refresh
+      // ✅ Reset all state and refs properly
       setLoadedRanges([]);
       setEvents([]);
       loadingRangesRef.current.clear();
+      loadedRangesRef.current.clear();
+      loadedMinDateRef.current = null;
+      loadedMaxDateRef.current = null;
+      isInitialLoadRef.current = false;
+      eventsRef.current = []; // ✅ Added this
       
       await fetchInitialData();
     } catch (err) {
@@ -472,8 +534,9 @@ const Dashboard: React.FC = () => {
                 setSelectedEvent(event);
               }}
               accounts={accounts}
-              onLoadEvents={stableLoadEventsForRange}
+              onLoadEvents={loadEventsForRange}
               loading={loading}
+              onViewDateChange={setCurrentViewDate}
             />
           </div>
 

@@ -69,6 +69,7 @@ interface CalendarProps {
   accounts: CalendarAccount[];
   onLoadEvents: (startDate: Date, endDate: Date) => Promise<Event[]>;
   loading?: boolean;
+  onViewDateChange?: (date: Date) => void;
 }
 
 type ViewMode = 'month' | 'week' | 'day';
@@ -93,110 +94,15 @@ const CalendarComponent: React.FC<CalendarProps> = ({
   onEventClick,
   accounts,
   onLoadEvents,
+  onViewDateChange
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState(selectedDate);
   const [navigationLoading, setNavigationLoading] = useState(false);
-  
-  // Track loaded month ranges to prevent duplicate loading
-  const loadedMonthsRef = useRef<Set<string>>(new Set());
-  const loadingMonthsRef = useRef<Set<string>>(new Set());
 
-  // Create a normalized month key for tracking
-  const createMonthKey = (date: Date): string => {
-    return `${date.getFullYear()}-${date.getMonth()}`;
-  };
-
-  // Get required months for current view with 3-month buffer
-  const getRequiredMonths = useCallback((date: Date, mode: ViewMode): Date[] => {
-    const months: Date[] = [];
-    let startMonth: Date;
-    let endMonth: Date;
-    
-    switch (mode) {
-      case 'month':
-        startMonth = subMonths(startOfMonth(date), 3);
-        endMonth = addMonths(startOfMonth(date), 3);
-        break;
-      case 'week':
-        const weekStart = startOfWeek(date, { weekStartsOn: 1 });
-        const weekEnd = endOfWeek(date, { weekStartsOn: 1 });
-        startMonth = subMonths(startOfMonth(weekStart), 2);
-        endMonth = addMonths(startOfMonth(weekEnd), 2);
-        break;
-      case 'day':
-        startMonth = subMonths(startOfMonth(date), 2);
-        endMonth = addMonths(startOfMonth(date), 2);
-        break;
-      default:
-        startMonth = subMonths(startOfMonth(date), 3);
-        endMonth = addMonths(startOfMonth(date), 3);
-    }
-
-    let current = new Date(startMonth);
-    while (current <= endMonth) {
-      months.push(new Date(current));
-      current = addMonths(current, 1);
-    }
-
-    return months;
-  }, []);
-
-  // Load events for specific months that aren't already loaded
-  const loadEventsForMonths = useCallback(async (months: Date[], showLoading = true) => {
-    const monthsToLoad = months.filter(month => {
-      const monthKey = createMonthKey(month);
-      return !loadedMonthsRef.current.has(monthKey) && !loadingMonthsRef.current.has(monthKey);
-    });
-
-    if (monthsToLoad.length === 0) {
-      return;
-    }
-
-    if (showLoading) {
-      setNavigationLoading(true);
-    }
-
-    try {
-      // Mark months as loading
-      monthsToLoad.forEach(month => {
-        loadingMonthsRef.current.add(createMonthKey(month));
-      });
-
-      // Load events for each month range
-      const promises = monthsToLoad.map(month => {
-        const start = startOfMonth(month);
-        const end = endOfMonth(month);
-        return onLoadEvents(start, end);
-      });
-
-      await Promise.all(promises);
-
-      // Mark months as loaded
-      monthsToLoad.forEach(month => {
-        const monthKey = createMonthKey(month);
-        loadedMonthsRef.current.add(monthKey);
-        loadingMonthsRef.current.delete(monthKey);
-      });
-
-    } catch (error) {
-      console.error('Failed to load events for months:', error);
-      // Remove from loading set on error
-      monthsToLoad.forEach(month => {
-        loadingMonthsRef.current.delete(createMonthKey(month));
-      });
-    } finally {
-      if (showLoading) {
-        setNavigationLoading(false);
-      }
-    }
-  }, [onLoadEvents]);
-
-  // Load required events when view or date changes
   useEffect(() => {
-    const requiredMonths = getRequiredMonths(currentDate, viewMode);
-    loadEventsForMonths(requiredMonths, currentDate.getTime() !== selectedDate.getTime());
-  }, [currentDate, viewMode, getRequiredMonths, loadEventsForMonths, selectedDate]);
+    onViewDateChange?.(currentDate);
+  }, [currentDate, onViewDateChange]);
 
   // Handle navigation with proper loading - throttled to prevent rapid clicks
   const navigateDate = useCallback(async (direction: 'prev' | 'next') => {
@@ -212,6 +118,8 @@ const CalendarComponent: React.FC<CalendarProps> = ({
     }
     
     setCurrentDate(newDate);
+
+    setTimeout(() => setNavigationLoading(false), 500);
   }, [currentDate, viewMode, navigationLoading]);
 
   // Function to get calendar color for an event
