@@ -60,12 +60,15 @@ export const googleEventsWebhookHandler = async (req, res) => {
     // 🔄 3. Google Calendar API client
     const calendar = google.calendar({ version: "v3", auth: oauth2Client });
 
+    const userId = calendarAccount.userId.toString();
+
     // 🔁 4. Perform incremental sync
-    const { eventsProcessed, newSyncToken } = await performIncrementalSync(
+    const { events ,eventsProcessed, newSyncToken } = await performIncrementalSync(
       calendar,
       calendarId,
       calendarInfo.syncToken,
-      accountId
+      accountId,
+      userId
     );
 
     // 💾 5. Save new syncToken
@@ -74,14 +77,6 @@ export const googleEventsWebhookHandler = async (req, res) => {
 
     console.log(
       `✅ Synced ${eventsProcessed} events for calendarId: ${calendarId}`
-    );
-    
-    // Send SSE update to user
-    sseService.sendSyncStatus(
-      calendarAccount.userId.toString(),
-      'completed',
-      `Synced ${eventsProcessed} events from Google Calendar`,
-      { calendarId, eventsProcessed, provider: 'google' }
     );
     
     return res.status(200).send("Sync complete");

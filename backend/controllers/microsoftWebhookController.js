@@ -81,6 +81,7 @@ export const microsoftEventsWebhookHandler = async (req, res) => {
 
                 try {
                     let eventsProcessed = 0;
+                    const userId = account.userId.toString();
                     if (deltaLink) {
                         const { eventsProcessed: incrementalEvents, newDeltaLink } = await performMicrosoftIncrementalSync(
                             calendarId,
@@ -88,7 +89,8 @@ export const microsoftEventsWebhookHandler = async (req, res) => {
                             headers,
                             account._id,
                             startTime,
-                            endTime
+                            endTime,
+                            userId
                         );
                         eventsProcessed = incrementalEvents;
                         await persistDelta(newDeltaLink);

@@ -159,18 +159,6 @@ const Dashboard: React.FC = () => {
         })
       );
     },
-    onSyncStatus: (status) => {
-      if (status === 'completed') {
-        // ✅ Reset all state and refs properly
-        setEvents([]);
-        loadingRangesRef.current.clear();
-        loadedRangesRef.current.clear(); // ✅ Added this
-        loadedMinDateRef.current = null; // ✅ Added this
-        loadedMaxDateRef.current = null; // ✅ Added this
-        isInitialLoadRef.current = false; // ✅ Reset this
-        fetchInitialData();
-      }
-    },
   });
 
   useEffect(() => {

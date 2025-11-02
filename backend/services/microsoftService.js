@@ -7,6 +7,7 @@ import Event from "../models/eventModel.js";
 import jwt from "jsonwebtoken";
 import { refreshCalendarAccessToken } from "../utils/refreshToken.js";
 import { scheduleMicrosoftRenewal } from '../utils/agendaUtils.js';
+import sseService from "../services/sseService.js";
 
 dotenv.config();
 
@@ -33,7 +34,6 @@ export async function connect(userIdFromQuery, state, setCookie, redirect) {
 }
 
 export async function callback(query, cookies, clearCookie, redirect) {
-  console.log('Inside microsoft callback');
   const { code, state } = query;
   let userId;
   if (state) {
@@ -273,22 +273,59 @@ export async function performMicrosoftFullSync(calendarId, headers, accountId, s
   return { eventsProcessed, newDeltaLink };
 }
 
-export async function performMicrosoftIncrementalSync(calendarId, deltaLink, headers, accountId, startTime, endTime) {
+export async function performMicrosoftIncrementalSync(
+  calendarId, 
+  deltaLink, 
+  headers, 
+  accountId, 
+  startTime, 
+  endTime,
+  userId = null // ✅ Add userId parameter
+) {
+  // ✅ Send sync started status
+  if (userId) {
+    sseService.sendSyncStatus(
+      userId,
+      'started',
+      'Starting calendar sync...',
+      { calendarId, provider: 'microsoft' }
+    );
+  }
+  
   const { events: changedEvents, newDeltaLink } = await fetchDeltaEvents(deltaLink, headers);
   const modifiedSeries = new Set();
+  
   for (const event of changedEvents) {
     if (event["@removed"]) {
-      await handleEventDeletion(event, accountId, calendarId);
+      await handleEventDeletion(event, accountId, calendarId, userId); // ✅ Pass userId
     } else {
       if (event.type === 'seriesMaster') {
         modifiedSeries.add(event.id);
-        await handleRecurringEventUpdate(event, calendarId, startTime, endTime, headers, accountId);
+        await handleRecurringEventUpdate(
+          event, 
+          calendarId, 
+          startTime, 
+          endTime, 
+          headers, 
+          accountId,
+          userId // ✅ Pass userId
+        );
       } else {
-        await processEvents([event], accountId, calendarId);
+        await processEvents([event], accountId, calendarId, userId); // ✅ Pass userId
       }
     }
   }
-  await validateAllRecurringSeries(accountId, calendarId, startTime, endTime, headers, modifiedSeries);
+  
+  await validateAllRecurringSeries(
+    accountId, 
+    calendarId, 
+    startTime, 
+    endTime, 
+    headers, 
+    modifiedSeries,
+    userId // ✅ Pass userId if this function exists
+  );
+  
   return { eventsProcessed: changedEvents.length, newDeltaLink };
 }
 
@@ -335,12 +372,30 @@ async function getDeltaLink(deltaRes, headers) {
   return deltaLink;
 }
 
-export async function handleRecurringEventUpdate(seriesMaster, calendarId, startTime, endTime, headers, accountId) {
+export async function handleRecurringEventUpdate(
+  seriesMaster, 
+  calendarId, 
+  startTime, 
+  endTime, 
+  headers, 
+  accountId,
+  userId = null // ✅ Add userId parameter
+) {
   try {
-    const existingInstances = await Event.find({ calendarAccountId: accountId, calendarId, source: 'microsoft', $or: [{ externalId: seriesMaster.id }, { recurringEventId: seriesMaster.id }] });
+    const existingInstances = await Event.find({ 
+      calendarAccountId: accountId, 
+      calendarId, 
+      source: 'microsoft', 
+      $or: [
+        { externalId: seriesMaster.id }, 
+        { recurringEventId: seriesMaster.id }
+      ] 
+    });
+    
     const instancesUrl = `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events/${seriesMaster.id}/instances?startDateTime=${startTime}&endDateTime=${endTime}`;
     let url = instancesUrl;
     let freshInstances = [];
+    
     while (url) {
       const response = await axios.get(url, { headers });
       if (response.data.value && Array.isArray(response.data.value)) {
@@ -348,17 +403,39 @@ export async function handleRecurringEventUpdate(seriesMaster, calendarId, start
       }
       url = response.data['@odata.nextLink'] || null;
     }
+    
     const existingIds = new Set(existingInstances.map(e => e.externalId));
     const freshIds = new Set(freshInstances.map(e => e.id));
     const instancesToDelete = [...existingIds].filter(id => !freshIds.has(id));
+    
     if (instancesToDelete.length > 0) {
-      await Event.deleteMany({ calendarAccountId: accountId, calendarId, source: 'microsoft', externalId: { $in: instancesToDelete } });
+      // ✅ Send delete notifications before deleting
+      if (userId) {
+        const eventsToDelete = existingInstances.filter(e => 
+          instancesToDelete.includes(e.externalId)
+        );
+        
+        for (const deletedEvent of eventsToDelete) {
+          sseService.sendEventUpdate(userId, deletedEvent.toObject(), 'deleted');
+        }
+      }
+      
+      await Event.deleteMany({ 
+        calendarAccountId: accountId, 
+        calendarId, 
+        source: 'microsoft', 
+        externalId: { $in: instancesToDelete } 
+      });
     }
-    await processEvents(freshInstances, accountId, calendarId);
-  } catch (err) {}
+    
+    // ✅ Pass userId to processEvents
+    await processEvents(freshInstances, accountId, calendarId, userId);
+  } catch (err) {
+    console.error('Error handling recurring event update:', err);
+  }
 }
 
-export async function validateAllRecurringSeries(accountId, calendarId, startTime, endTime, headers, modifiedSeries = new Set()) {
+export async function validateAllRecurringSeries(accountId, calendarId, startTime, endTime, headers, modifiedSeries = new Set(), userId = null) {
   try {
     const recurringSeries = await Event.find({ calendarAccountId: accountId, calendarId, source: 'microsoft', isRecurring: true }).distinct('externalId');
     for (const seriesId of recurringSeries) {
@@ -381,7 +458,7 @@ export async function validateAllRecurringSeries(accountId, calendarId, startTim
         if (deletedIds.length > 0) {
           await Event.deleteMany({ calendarAccountId: accountId, calendarId, source: 'microsoft', externalId: { $in: deletedIds } });
         }
-        await processEvents(freshInstances, accountId, calendarId);
+        await processEvents(freshInstances, accountId, calendarId, userId);
       } catch (err) {
         if (err.response?.status === 404) {
           await Event.deleteMany({ calendarAccountId: accountId, calendarId, source: 'microsoft', $or: [{ externalId: seriesId }, { recurringEventId: seriesId }] });
@@ -391,21 +468,78 @@ export async function validateAllRecurringSeries(accountId, calendarId, startTim
   } catch {}
 }
 
-export async function handleEventDeletion(removedEvent, accountId, calendarId) {
+export async function handleEventDeletion(removedEvent, accountId, calendarId, userId = null) {
   const eventId = removedEvent.id;
-  const existingEvent = await Event.findOne({ calendarAccountId: accountId, calendarId, source: 'microsoft', externalId: eventId });
-  const hasInstances = await Event.findOne({ calendarAccountId: accountId, calendarId, source: 'microsoft', recurringEventId: eventId });
+  
+  // ✅ Fetch event(s) BEFORE deleting for SSE notification
+  const existingEvent = await Event.findOne({ 
+    calendarAccountId: accountId, 
+    calendarId, 
+    source: 'microsoft', 
+    externalId: eventId 
+  });
+  
+  const hasInstances = await Event.findOne({ 
+    calendarAccountId: accountId, 
+    calendarId, 
+    source: 'microsoft', 
+    recurringEventId: eventId 
+  });
+  
   if (existingEvent?.isRecurring || hasInstances) {
-    await Event.deleteMany({ calendarAccountId: accountId, calendarId, source: 'microsoft', $or: [{ externalId: eventId }, { recurringEventId: eventId }] });
+    // ✅ Fetch all instances before deleting
+    if (userId) {
+      const allInstances = await Event.find({ 
+        calendarAccountId: accountId, 
+        calendarId, 
+        source: 'microsoft', 
+        $or: [
+          { externalId: eventId }, 
+          { recurringEventId: eventId }
+        ] 
+      });
+      
+      // Send delete notifications
+      for (const instance of allInstances) {
+        sseService.sendEventUpdate(userId, instance.toObject(), 'deleted');
+      }
+    }
+    
+    await Event.deleteMany({ 
+      calendarAccountId: accountId, 
+      calendarId, 
+      source: 'microsoft', 
+      $or: [
+        { externalId: eventId }, 
+        { recurringEventId: eventId }
+      ] 
+    });
   } else {
-    await Event.deleteOne({ calendarAccountId: accountId, calendarId, source: 'microsoft', externalId: eventId });
+    // ✅ Send delete notification for single event
+    if (userId && existingEvent) {
+      sseService.sendEventUpdate(userId, existingEvent.toObject(), 'deleted');
+    }
+    
+    await Event.deleteOne({ 
+      calendarAccountId: accountId, 
+      calendarId, 
+      source: 'microsoft', 
+      externalId: eventId 
+    });
   }
 }
 
-export async function processEvents(events, accountId, calendarId) {
+export async function processEvents(events, accountId, calendarId, userId = null) {
+  const processedEventIds = []; // Track processed event IDs
+  
   for (const event of events) {
     await Event.findOneAndUpdate(
-      { calendarAccountId: accountId, externalId: event.id, calendarId, source: 'microsoft' },
+      { 
+        calendarAccountId: accountId, 
+        externalId: event.id, 
+        calendarId, 
+        source: 'microsoft' 
+      },
       {
         calendarAccountId: accountId,
         calendarId,
@@ -414,20 +548,52 @@ export async function processEvents(events, accountId, calendarId) {
         title: event.subject,
         description: event.bodyPreview,
         location: event.location?.displayName,
-        start: { dateTime: new Date(event.start?.dateTime + "Z"), timeZone: event.start?.timeZone || 'UTC' },
-        end: { dateTime: new Date(event.end?.dateTime + "Z"), timeZone: event.end?.timeZone || 'UTC' },
+        start: { 
+          dateTime: new Date(event.start?.dateTime + "Z"), 
+          timeZone: event.start?.timeZone || 'UTC' 
+        },
+        end: { 
+          dateTime: new Date(event.end?.dateTime + "Z"), 
+          timeZone: event.end?.timeZone || 'UTC' 
+        },
         isAllDay: Boolean(event.isAllDay),
-        organizer: { email: event.organizer?.emailAddress?.address, name: event.organizer?.emailAddress?.name },
-        attendees: event.attendees?.map(a => ({ email: a.emailAddress?.address, name: a.emailAddress?.name, responseStatus: a.status?.response })),
+        organizer: { 
+          email: event.organizer?.emailAddress?.address, 
+          name: event.organizer?.emailAddress?.name 
+        },
+        attendees: event.attendees?.map(a => ({ 
+          email: a.emailAddress?.address, 
+          name: a.emailAddress?.name, 
+          responseStatus: a.status?.response 
+        })),
         isRecurring: event.type === 'seriesMaster',
         recurringEventId: event.seriesMasterId,
-        status: event.isCancelled ? 'cancelled' : (event.showAs === 'tentative' ? 'tentative' : 'confirmed'),
+        status: event.isCancelled 
+          ? 'cancelled' 
+          : (event.showAs === 'tentative' ? 'tentative' : 'confirmed'),
         htmlLink: event.webLink,
         raw: event,
         updatedAt: new Date()
       },
       { upsert: true, new: true }
     );
+    
+    processedEventIds.push(event.id);
+  }
+  
+  // ✅ Send SSE notifications after processing
+  if (userId && processedEventIds.length > 0) {
+    const processedEvents = await Event.find({
+      calendarAccountId: accountId,
+      calendarId,
+      source: 'microsoft',
+      externalId: { $in: processedEventIds }
+    });
+    
+    for (const processedEvent of processedEvents) {
+      // Use 'updated' action for both new and updated events
+      sseService.sendEventUpdate(userId, processedEvent.toObject(), 'updated');
+    }
   }
 }
 
