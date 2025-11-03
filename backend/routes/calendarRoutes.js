@@ -6,14 +6,13 @@ import {
   getUserCalendars
 } from '../controllers/calendarEventController.js';
 import protectRoute from "../middleware/protectRoute.js";
+import { apiLimiter } from '../services/rateLimitingService.js';
 
 const router = express.Router();
 
-router.use(protectRoute);
-
-router.post('/events', createCalendarEvent);
-router.put('/events/:id', updateCalendarEvent);
-router.delete('/events/:id', deleteCalendarEvent);
-router.get('/calendars', getUserCalendars);
+router.post('/events', apiLimiter, protectRoute, createCalendarEvent);
+router.put('/events/:id', apiLimiter, protectRoute, updateCalendarEvent);
+router.delete('/events/:id', apiLimiter, protectRoute, deleteCalendarEvent);
+router.get('/calendars', apiLimiter, protectRoute, getUserCalendars);
 
 export default router; 
