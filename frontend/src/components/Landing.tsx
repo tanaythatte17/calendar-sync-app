@@ -126,7 +126,32 @@ const Landing: React.FC = () => {
                 >
                   Tired of switching between calendar apps? Get real-time calendar sync across Google Calendar and Outlook in one unified dashboard. See all your meetings, events, and appointments in a single view.
                 </Typography>
-                <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Button
+                    component={RouterLink}
+                    to="/how-it-works"
+                    variant="contained"
+                    size="large"
+                    sx={{
+                      color: '#1f2937',
+                      px: 6,
+                      py: 1.5,
+                      fontSize: '1.1rem',
+                      fontWeight: 600,
+                      borderRadius: 3,
+                      textTransform: 'none',
+                      boxShadow: '0 10px 25px rgba(251, 191, 36, 0.3)',
+                      '&:hover': {
+                        bgcolor: '#f59e0b',
+                        transform: 'translateY(-2px)',
+                        boxShadow: '0 15px 35px rgba(251, 191, 36, 0.4)',
+                      },
+                      transition: 'all 0.3s ease-in-out'
+                    }}
+                  >
+                    How It Works
+                  </Button>
+                  
                   <Button
                     component={RouterLink}
                     to="/register"
@@ -135,7 +160,7 @@ const Landing: React.FC = () => {
                     sx={{
                       bgcolor: '#fbbf24',
                       color: '#1f2937',
-                      px: 4,
+                      px: 6,
                       py: 1.5,
                       fontSize: '1.1rem',
                       fontWeight: 600,
@@ -152,24 +177,25 @@ const Landing: React.FC = () => {
                   >
                     Connect Your Calendars
                   </Button>
+                  
                   <Button
                     component={RouterLink}
                     to="/login"
-                    variant="outlined"
+                    variant="contained"
                     size="large"
                     sx={{
-                      color: 'white',
-                      borderColor: 'white',
-                      px: 4,
+                      color: '#1f2937',
+                      px: 6,
                       py: 1.5,
                       fontSize: '1.1rem',
                       fontWeight: 600,
                       borderRadius: 3,
                       textTransform: 'none',
+                      boxShadow: '0 10px 25px rgba(251, 191, 36, 0.3)',
                       '&:hover': {
-                        bgcolor: 'rgba(255, 255, 255, 0.1)',
-                        borderColor: 'white',
+                        bgcolor: '#f59e0b',
                         transform: 'translateY(-2px)',
+                        boxShadow: '0 15px 35px rgba(251, 191, 36, 0.4)',
                       },
                       transition: 'all 0.3s ease-in-out'
                     }}
