@@ -1,4 +1,4 @@
-import { signup as signupService, login as loginService, logout as logoutService, getMe as getMeService } from "../services/authService.js";
+import { signup as signupService, login as loginService, logout as logoutService, getMe as getMeService, forgotPasswordService, verifyOTPService, setNewPasswordService } from "../services/authService.js";
 
 export const signup = async (req,res) => {
     try{
@@ -50,3 +50,36 @@ export const getMe = (req, res) => {
         res.status(status).json({ error: error.message || "Error" });
     }
 };
+
+export const forgotPassword = async (req, res) => {
+    try {
+        const {email} = req.body;
+        const result = await forgotPasswordService(email);
+        res.status(200).json(result);
+    } catch(error){
+        const status = error.statusCode || 400;
+        res.status(status).json({ error: error.message || "Error" });
+    }
+}
+
+export const verifyOTP = async (req, res) => {
+    try {
+        const {email, otp} = req.body;
+        const result = await verifyOTPService(email, otp);
+        res.status(200).json(result);
+    } catch(error){
+        const status = error.statusCode || 400;
+        res.status(status).json({ error: error.message || "Error" });
+    }
+}
+
+export const setNewPassword = async (req, res) => {
+    try{
+        const {email, newPassword, confirmNewPassword, resetToken} = req.body;
+        const result = await setNewPasswordService(email, newPassword, confirmNewPassword, resetToken);
+        res.status(200).json(result);
+    } catch(error){
+        const status = error.statusCode || 400;
+        res.status(status).json({ error: error.message || "Error" });
+    }
+}

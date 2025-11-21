@@ -36,15 +36,15 @@ jobs:
 
       - name: Rsync frontend build to VPS
         run: |
-          rsync -az --delete --info=progress2 -e "ssh -o StrictHostKeyChecking=no" frontend-dist/ tanay@35.233.159.215:/var/www/calendar-sync-app/frontend/dist
+          rsync -az --delete --info=progress2 -e "ssh -o StrictHostKeyChecking=no" frontend-dist/ tanay@34.169.240.53:/var/www/calendar-sync-app/frontend/dist
 
       - name: Rsync backend to VPS
         run: |
-          rsync -az --delete --exclude=".env" --info=progress2 -e "ssh -o StrictHostKeyChecking=no" backend/ tanay@35.233.159.215:/var/www/calendar-sync-app/backend
+          rsync -az --delete --exclude=".env" --info=progress2 -e "ssh -o StrictHostKeyChecking=no" backend/ tanay@34.169.240.53:/var/www/calendar-sync-app/backend
 
       - name: Restart backend
         run: |
-          ssh -o StrictHostKeyChecking=no tanay@35.233.159.215 << 'EOF'
+          ssh -o StrictHostKeyChecking=no tanay@34.169.240.53 << 'EOF'
             cd /var/www/calendar-sync-app/backend
             npm ci
             sudo pm2 restart project-backend || sudo pm2 start server.js --name project-backend

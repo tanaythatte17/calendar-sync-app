@@ -1,5 +1,6 @@
 import User from "../models/userModel.js";
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 import generateTokenAndSetCookie from "../utils/generateToken.js";
 
 export async function signup(res, { name, email, password }) {
@@ -80,4 +81,102 @@ export function getMe(user) {
   return { data: { id: _id, name, email } };
 }
 
+export async function forgotPasswordService(email){
+  const user = await User.findOne({email});
+  if (!user){
+    const error = new Error("User with this email does not exist");
+    error.statusCode = 400;
+    throw error;
+  }
 
+  const otp = Math.floor(100000 + Math.random() * 900000);
+
+  user.forgotPasswordOTP = otp;
+  user.forgotPasswordOTPExpires = new Date(Date.now() + 5 * 60 * 1000); // 15 minutes
+  await user.save();
+
+  //ToDO - Send Mail.
+
+  return({
+    "otp":otp,
+    "message":"Sent OTP to mail"
+  });
+}
+
+export async function verifyOTPService(email, otp) {
+  const user = await User.findOne({email});
+  if(!user){
+    const error = new Error("User with this email does not exist");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const existingOTP = user.forgotPasswordOTP;
+  otp = Number(otp);
+  if (!existingOTP || existingOTP !== otp) {
+    const error = new Error("Invalid OTP");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (user.forgotPasswordOTPExpires < Date.now()) {
+    const error = new Error("OTP has expired");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const resetToken = crypto.randomBytes(32).toString("hex");
+  user.resetPasswordToken = resetToken;
+  user.resetPasswordTokenExpires = new Date(Date.now() + 5 * 60 * 1000);
+
+  user.forgotPasswordOTP = undefined;
+  user.forgotPasswordOTPExpires = undefined;
+  await user.save();
+
+  return ({
+    "resetToken": resetToken,
+    "message":"OTP verified successfully"
+  });
+}
+
+export const setNewPasswordService = async (email, newPassword, confirmNewPassword, resetToken) => {
+  const user = await User.findOne({
+    email,
+    resetPasswordToken: resetToken,
+  });
+
+  if (!user){
+    const error = new Error("User with this email does not exist");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if(user.resetPasswordTokenExpires < Date.now()){
+    const error = new Error('Reset Password Time has expired');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if(newPassword !== confirmNewPassword){
+    const error = new Error('Passwords do not match');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+  if(hashedPassword === user.password){
+    const error = new Error('New password must be different from the old password');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  user.password = hashedPassword;
+  user.resetPasswordToken = undefined;
+  user.resetPasswordTokenExpires = undefined;
+  await user.save();
+
+  return ({
+    "message":"Password reset successfully"
+  });
+}
