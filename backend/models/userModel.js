@@ -28,7 +28,12 @@ const UserSchema = new mongoose.Schema({
   timezone: {
     type: String,
     default: 'UTC',
-  }
+  },
+  forgotPasswordOTP: { type: Number },
+  forgotPasswordOTPExpires: { type: Date },
+
+  resetPasswordToken: { type: String },  
+  resetPasswordTokenExpires: { type: Date }
 });
 
 const User = mongoose.model("User", UserSchema);

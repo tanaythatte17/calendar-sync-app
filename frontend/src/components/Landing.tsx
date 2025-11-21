@@ -130,21 +130,25 @@ const Landing: React.FC = () => {
                   <Button
                     component={RouterLink}
                     to="/how-it-works"
-                    variant="contained"
+                    variant="outlined"
                     size="large"
                     sx={{
-                      color: '#1f2937',
+                      color: '#ffffff',
+                      borderColor: 'rgba(255, 255, 255, 0.5)',
                       px: 6,
                       py: 1.5,
                       fontSize: '1.1rem',
                       fontWeight: 600,
                       borderRadius: 3,
+                      borderWidth: 2,
                       textTransform: 'none',
-                      boxShadow: '0 10px 25px rgba(251, 191, 36, 0.3)',
+                      backdropFilter: 'blur(10px)',
+                      bgcolor: 'rgba(255, 255, 255, 0.1)',
                       '&:hover': {
-                        bgcolor: '#f59e0b',
+                        bgcolor: 'rgba(255, 255, 255, 0.2)',
+                        borderColor: '#ffffff',
                         transform: 'translateY(-2px)',
-                        boxShadow: '0 15px 35px rgba(251, 191, 36, 0.4)',
+                        boxShadow: '0 15px 35px rgba(255, 255, 255, 0.2)',
                       },
                       transition: 'all 0.3s ease-in-out'
                     }}
@@ -154,48 +158,26 @@ const Landing: React.FC = () => {
                   
                   <Button
                     component={RouterLink}
-                    to="/register"
-                    variant="contained"
-                    size="large"
-                    sx={{
-                      bgcolor: '#fbbf24',
-                      color: '#1f2937',
-                      px: 6,
-                      py: 1.5,
-                      fontSize: '1.1rem',
-                      fontWeight: 600,
-                      borderRadius: 3,
-                      textTransform: 'none',
-                      boxShadow: '0 10px 25px rgba(251, 191, 36, 0.3)',
-                      '&:hover': {
-                        bgcolor: '#f59e0b',
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 15px 35px rgba(251, 191, 36, 0.4)',
-                      },
-                      transition: 'all 0.3s ease-in-out'
-                    }}
-                  >
-                    Connect Your Calendars
-                  </Button>
-                  
-                  <Button
-                    component={RouterLink}
                     to="/login"
-                    variant="contained"
+                    variant="outlined"
                     size="large"
                     sx={{
-                      color: '#1f2937',
+                      color: '#ffffff',
+                      borderColor: 'rgba(255, 255, 255, 0.5)',
                       px: 6,
                       py: 1.5,
                       fontSize: '1.1rem',
                       fontWeight: 600,
                       borderRadius: 3,
+                      borderWidth: 2,
                       textTransform: 'none',
-                      boxShadow: '0 10px 25px rgba(251, 191, 36, 0.3)',
+                      backdropFilter: 'blur(10px)',
+                      bgcolor: 'rgba(255, 255, 255, 0.1)',
                       '&:hover': {
-                        bgcolor: '#f59e0b',
+                        bgcolor: 'rgba(255, 255, 255, 0.2)',
+                        borderColor: '#ffffff',
                         transform: 'translateY(-2px)',
-                        boxShadow: '0 15px 35px rgba(251, 191, 36, 0.4)',
+                        boxShadow: '0 15px 35px rgba(255, 255, 255, 0.2)',
                       },
                       transition: 'all 0.3s ease-in-out'
                     }}
