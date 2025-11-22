@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: calendar-backend-dev
+    env_file:
+      - ./backend/.env.development
+    volumes:
+      - ./backend:/app
+    ports:
+      - "5000:5000"
+    command: npm run dev
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: calendar-frontend-dev
+    env_file:
+      - ./frontend/.env.development
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "3000:3000"
+    command: npm run dev

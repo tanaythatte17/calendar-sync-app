@@ -1,4 +1,4 @@
-name: Deploy to VPS
+name: Deploy Docker Images
 
 on:
   push:
@@ -6,47 +6,39 @@ on:
       - main
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.7.0
-        with:
-          ssh-private-key: ${{ secrets.GOOGLE_VM_PRIVATE_KEY }}
-
-      # ✅ Inject .env file before building frontend
-      - name: Create frontend .env
+      - name: Login to Docker Hub
         run: |
-          cat <<EOF > frontend/.env
-          VITE_API_URL=${{ secrets.FRONTEND_API_URL }}
-          EOF
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-      - name: Build frontend
+      # ------------------------
+      # Backend build & push
+      # ------------------------
+      - name: Build backend image
         run: |
-          cd frontend
-          npm ci
-          npm run build
-          npm run generate-sitemap
-          cd ..
-          mv frontend/dist frontend-dist
+          docker build \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/calendar-backend:latest \
+            ./backend
 
-      - name: Rsync frontend build to VPS
-        run: |
-          rsync -az --delete --info=progress2 -e "ssh -o StrictHostKeyChecking=no" frontend-dist/ tanay@34.169.240.53:/var/www/calendar-sync-app/frontend/dist
+      - name: Push backend image
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/calendar-backend:latest
 
-      - name: Rsync backend to VPS
+      # ------------------------
+      # Frontend build & push
+      # ------------------------
+      - name: Build frontend image
         run: |
-          rsync -az --delete --exclude=".env" --info=progress2 -e "ssh -o StrictHostKeyChecking=no" backend/ tanay@34.169.240.53:/var/www/calendar-sync-app/backend
+          docker build \
+            --build-arg APP_API_URL="https://api.unifiedcalendarview.com/api" \
+            --build-arg APP_ENV="production" \
+            -t ${{ secrets.DOCKERHUB_USERNAME }}/calendar-frontend:latest \
+            ./frontend
 
-      - name: Restart backend
-        run: |
-          ssh -o StrictHostKeyChecking=no tanay@34.169.240.53 << 'EOF'
-            cd /var/www/calendar-sync-app/backend
-            npm ci
-            sudo pm2 restart project-backend || sudo pm2 start server.js --name project-backend
-            sudo pm2 save
-          EOF
+      - name: Push frontend image
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/calendar-frontend:latest
