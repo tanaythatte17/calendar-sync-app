@@ -1,37 +1,38 @@
-version: "3.9"
+version: '3.8'
 
 services:
-  backend:
+  backend-1:
+    container_name: calendar-backend-1
     image: tanaythatte17/calendar-backend:latest
-    container_name: calendar-backend
     restart: always
     env_file:
-      - ./backend/.env         # create these on VPS (do NOT commit)
+      - ./backend/.env
     ports:
-      - "5000:5000"
+      - "3001:3000"    # Backend #1 available at localhost:3001
     networks:
-      - app-network
+      - calendar-net
 
-  frontend-builder:
+  frontend:
+    container_name: calendar-frontend
     image: tanaythatte17/calendar-frontend:latest
-    container_name: calendar-frontend-builder
-    restart: "no"
-    volumes:
-      - /var/www/calendar-sync-app/frontend:/app/dist   # host folder where NGINX serves static files
-    command: ["sh", "-c", "rm -rf /app/dist/* && cp -r /app/dist/* /app/dist/ || true"]
+    restart: always
+    ports:
+      - "8080:80"       # Public frontend on port 8080
     networks:
-      - app-network
+      - calendar-net
 
   watchtower:
-    image: containrrr/watchtower:latest
     container_name: watchtower
+    image: containrrr/watchtower
     restart: always
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --cleanup --interval 30
-    networks:
-      - app-network
+    command: >
+      --interval 300
+      --cleanup
+      calendar-backend-1
+      calendar-frontend
 
 networks:
-  app-network:
+  calendar-net:
     driver: bridge

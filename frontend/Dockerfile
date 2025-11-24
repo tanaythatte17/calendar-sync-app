@@ -3,10 +3,7 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# Accept build-time arguments
 ARG APP_API_URL
-
-# Export as environment variables so Vite can read them during build
 ENV VITE_API_URL=$APP_API_URL
 
 COPY package*.json ./
@@ -16,12 +13,15 @@ COPY . .
 RUN npm run build
 
 
-# ---------- STAGE 2: Serve via NGINX ----------
-FROM nginx:alpine
+# ---------- STAGE 2: Run with a lightweight static server ----------
+FROM node:18-alpine
 
-# Copy build output to Nginx web root
-COPY --from=builder /app/dist /usr/share/nginx/html
+WORKDIR /app
 
-EXPOSE 80
+RUN npm install -g serve
 
-CMD ["nginx", "-g", "daemon off;"]
+COPY --from=builder /app/dist ./dist
+
+EXPOSE 8080
+
+CMD ["serve", "-s", "dist", "-l", "8080"]
