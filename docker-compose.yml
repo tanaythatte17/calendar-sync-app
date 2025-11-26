@@ -8,16 +8,17 @@ services:
     env_file:
       - ./backend/.env
     ports:
-      - "3001:3000"    # Backend #1 available at localhost:3001
+      - "3001:3000"
     networks:
       - calendar-net
 
   frontend:
     container_name: calendar-frontend
-    image: tanaythatte17/calendar-frontend:latest
+    build:
+      context: ./frontend  # Build from local folder or use image from Docker Hub if it already contains Nginx
     restart: always
     ports:
-      - "8080:80"       # Public frontend on port 8080
+      - "8080:80"          # Host port 8080 -> container port 80
     networks:
       - calendar-net
 

@@ -1,6 +1,5 @@
-# ---------- STAGE 1: Build ----------
+# ---------- Stage 1: Build React app ----------
 FROM node:18-alpine AS builder
-
 WORKDIR /app
 
 ARG APP_API_URL
@@ -10,14 +9,16 @@ COPY package*.json ./
 RUN npm install --legacy-peer-deps
 
 COPY . .
-RUN npm run build
+RUN npm run build   # Produces dist/ folder
 
-# ---------- STAGE 2: Output build artifacts ----------
-FROM alpine:3.18
+# ---------- Stage 2: Nginx to serve static files ----------
+FROM nginx:alpine
 
-WORKDIR /output
+# Copy build into Nginx html folder
+COPY --from=builder /app/dist /usr/share/nginx/html
 
-COPY --from=builder /app/dist ./dist
+# SPA fallback
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# This container does NOT run a server – it only provides the built files.
-CMD ["sh", "-c", "cp -r dist /output"]
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
