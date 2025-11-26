@@ -12,16 +12,12 @@ RUN npm install --legacy-peer-deps
 COPY . .
 RUN npm run build
 
+# ---------- STAGE 2: Output build artifacts ----------
+FROM alpine:3.18
 
-# ---------- STAGE 2: Run with a lightweight static server ----------
-FROM node:18-alpine
-
-WORKDIR /app
-
-RUN npm install -g serve
+WORKDIR /output
 
 COPY --from=builder /app/dist ./dist
 
-EXPOSE 8080
-
-CMD ["serve", "-s", "dist", "-l", "8080"]
+# This container does NOT run a server – it only provides the built files.
+CMD ["sh", "-c", "cp -r dist /output"]
