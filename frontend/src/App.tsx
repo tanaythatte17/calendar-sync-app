@@ -11,6 +11,7 @@ import Landing from './components/Landing';
 import Navbar from './components/Navbar';
 import Policy from './components/Policy';
 import TermsOfService from './components/TermsOfService';
+import ForgotPassword from './components/ForgotPassword';
 import { HelmetProvider } from 'react-helmet-async';
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
                 />
                 <Route path="/policy" element={<Policy />} />
                 <Route path="/terms" element={<TermsOfService />} />
+                <Route path="forgot-password" element={<ForgotPassword />} />
               </Routes>
             </div>
           </Router>

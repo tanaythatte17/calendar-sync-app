@@ -2,6 +2,7 @@ import User from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import generateTokenAndSetCookie from "../utils/generateToken.js";
+import { sendOTPEmail } from "../utils/sendMail.js";
 
 export async function signup(res, { name, email, password }) {
   const existing = await User.findOne({ email });
@@ -81,9 +82,9 @@ export function getMe(user) {
   return { data: { id: _id, name, email } };
 }
 
-export async function forgotPasswordService(email){
-  const user = await User.findOne({email});
-  if (!user){
+export async function forgotPasswordService(email) {
+  const user = await User.findOne({ email });
+  if (!user) {
     const error = new Error("User with this email does not exist");
     error.statusCode = 400;
     throw error;
@@ -92,15 +93,28 @@ export async function forgotPasswordService(email){
   const otp = Math.floor(100000 + Math.random() * 900000);
 
   user.forgotPasswordOTP = otp;
-  user.forgotPasswordOTPExpires = new Date(Date.now() + 5 * 60 * 1000); // 15 minutes
+  user.forgotPasswordOTPExpires = new Date(Date.now() + 5 * 60 * 1000);
   await user.save();
 
-  //ToDO - Send Mail.
+  // Send OTP via email
+  try {
+    await sendOTPEmail(email, otp, user.name);
+  } catch (emailError) {
+    console.error('Email sending failed:', emailError);
+    
+    // Clear OTP if email fails
+    user.forgotPasswordOTP = undefined;
+    user.forgotPasswordOTPExpires = undefined;
+    await user.save();
+    
+    const error = new Error("Failed to send OTP email");
+    error.statusCode = 500;
+    throw error;
+  }
 
-  return({
-    "otp":otp,
-    "message":"Sent OTP to mail"
-  });
+  return {
+    message: "OTP sent to your email successfully"
+  };
 }
 
 export async function verifyOTPService(email, otp) {

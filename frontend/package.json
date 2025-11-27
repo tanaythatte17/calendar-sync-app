@@ -23,6 +23,7 @@
     "axios": "^1.9.0",
     "date-fns-tz": "^3.2.0",
     "event-source-polyfill": "^1.0.31",
+    "lucide-react": "^0.555.0",
     "moment-timezone": "^0.6.0",
     "react": "^18.3.1",
     "react-calendar": "^6.0.0",

@@ -7,7 +7,7 @@ const router = express.Router();
 router.post("/login", authLimiter, login);
 router.post("/signup", authLimiter, signup);
 router.post("/logout", authLimiter, logout);
-router.get("/forgot-password", authLimiter, forgotPassword);
+router.post("/forgot-password", authLimiter, forgotPassword);
 router.post("/verify-otp", authLimiter, verifyOTP);
 router.post("/reset-password", authLimiter, setNewPassword);
 router.get("/me", apiLimiter, protectRoute, getMe);

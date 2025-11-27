@@ -28,6 +28,7 @@
     "microsoft": "^0.0.0",
     "moment-timezone": "^0.6.0",
     "mongoose": "^8.16.0",
+    "nodemailer": "^7.0.11",
     "querystring": "^0.2.1",
     "uuid": "^11.1.0",
     "windows-iana": "^5.1.0"
