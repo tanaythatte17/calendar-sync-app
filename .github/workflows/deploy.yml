@@ -1,4 +1,4 @@
-name: Deploy Docker Images
+name: Deploy Docker Images (GHCR)
 
 on:
   push:
@@ -13,9 +13,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Login to Docker Hub
+      # ------------------------
+      # Login to GitHub Container Registry
+      # ------------------------
+      - name: Login to GHCR
         run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
       # ------------------------
       # Backend build & push
@@ -23,11 +26,11 @@ jobs:
       - name: Build backend image
         run: |
           docker build \
-            -t ${{ secrets.DOCKERHUB_USERNAME }}/calendar-backend:latest \
+            -t ghcr.io/${{ secrets.GHCR_USERNAME }}/calendar-backend:latest \
             ./backend
 
       - name: Push backend image
-        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/calendar-backend:latest
+        run: docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/calendar-backend:latest
 
       # ------------------------
       # Frontend build & push
@@ -37,8 +40,8 @@ jobs:
           docker build \
             --build-arg APP_API_URL="https://api.unifiedcalendarview.com/api" \
             --build-arg APP_ENV="production" \
-            -t ${{ secrets.DOCKERHUB_USERNAME }}/calendar-frontend:latest \
+            -t ghcr.io/${{ secrets.GHCR_USERNAME }}/calendar-frontend:latest \
             ./frontend
 
       - name: Push frontend image
-        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/calendar-frontend:latest
+        run: docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/calendar-frontend:latest
