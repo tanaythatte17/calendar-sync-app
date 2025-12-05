@@ -13,6 +13,7 @@ import calendarAccountRoutes from './routes/calendarAccountRoutes.js';
 import microsoftWebhookRoutes from './routes/microsoftWebhookRoutes.js';
 import sseRoutes from './routes/sseRoutes.js';
 import agenda from './utils/agendaUtils.js';
+import { redisClient } from './config/redis.js';
 
 dotenv.config();
 
@@ -39,10 +40,45 @@ app.use('/api/sse', sseRoutes);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  connectToDB();
-  (async () => {
+// Graceful shutdown handler
+const gracefulShutdown = async () => {
+  console.log('Shutting down gracefully...');
+  
+  try {
+    // Close Redis connection
+    await redisClient.quit();
+    console.log('Redis connection closed');
+    
+    // Stop Agenda
+    await agenda.stop();
+    console.log('Agenda stopped');
+    
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+};
+
+// Handle shutdown signals
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+app.listen(PORT, async () => {
+  try {
+    // Connect to MongoDB
+    await connectToDB();
+    
+    // Start Agenda
     await agenda.start();
-  })();
-  console.log(`Server running on port ${PORT}`);
-}); 
+    
+    // Redis connection is already established by importing the client
+    // Just verify it's connected
+    console.log('Redis status:', redisClient.status);
+    
+    console.log(`Server running on port ${PORT}`);
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+});
