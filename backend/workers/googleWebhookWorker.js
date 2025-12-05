@@ -1,0 +1,137 @@
+// workers/googleWebhookWorker.js
+import { Worker } from 'bullmq';
+import { google } from 'googleapis';
+import CalendarAccount from '../models/calendarAccountModel.js';
+import { performIncrementalSync, updateGoogleCalendarList } from '../services/googleService.js';
+import sseService from '../services/sseService.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+// Worker for Google Events Webhook
+export const googleEventsWorker = new Worker(
+  'google-webhook',
+  async (job) => {
+    const { calendarId, accountId } = job.data;
+
+    console.log(`Processing webhook job for calendar: ${calendarId}`);
+
+    // 🔐 1. Fetch calendar account and refresh token
+    const calendarAccount = await CalendarAccount.findById(accountId);
+    if (!calendarAccount || !calendarAccount.refreshToken) {
+      throw new Error('Calendar account or refresh token not found');
+    }
+
+    console.log('Calendar account found:', calendarAccount.email);
+    
+    const calendarInfo = calendarAccount.calendarList.find(
+      (c) => c.calendarId === calendarId
+    );
+    
+    if (!calendarInfo || !calendarInfo.syncToken) {
+      throw new Error('No syncToken found for this calendar');
+    }
+
+    // 🔐 2. Create OAuth2 client
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+
+    oauth2Client.setCredentials({
+      refresh_token: calendarAccount.refreshToken,
+    });
+
+    // 🔄 3. Google Calendar API client
+    const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+    const userId = calendarAccount.userId.toString();
+
+    // 🔁 4. Perform incremental sync
+    const { events, eventsProcessed, newSyncToken } = await performIncrementalSync(
+      calendar,
+      calendarId,
+      calendarInfo.syncToken,
+      accountId,
+      userId
+    );
+
+    // 💾 5. Save new syncToken
+    calendarInfo.syncToken = newSyncToken;
+    await calendarAccount.save();
+
+    console.log(`✅ Synced ${eventsProcessed} events for calendarId: ${calendarId}`);
+
+    return {
+      success: true,
+      eventsProcessed,
+      calendarId,
+    };
+  },
+  {
+    connection: {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: process.env.REDIS_PORT || 6379,
+      password: process.env.REDIS_PASSWORD || undefined,
+    },
+    concurrency: 5, // Process up to 5 jobs simultaneously
+  }
+);
+
+// Worker for Google Calendar List Webhook
+export const googleCalendarListWorker = new Worker(
+  'google-calendar-list',
+  async (job) => {
+    const { accountId } = job.data;
+
+    console.log(`Processing calendar list webhook job for account: ${accountId}`);
+
+    const calendarAccount = await CalendarAccount.findById(accountId);
+    if (!calendarAccount) {
+      throw new Error('Calendar account not found');
+    }
+
+    // Perform calendar list sync
+    await updateGoogleCalendarList(calendarAccount);
+
+    // Send SSE update to user
+    sseService.sendCalendarListUpdate(
+      calendarAccount.userId.toString(),
+      calendarAccount.calendarList,
+      'updated'
+    );
+
+    console.log(`✅ Calendar list synced for account: ${accountId}`);
+
+    return {
+      success: true,
+      accountId,
+    };
+  },
+  {
+    connection: {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: process.env.REDIS_PORT || 6379,
+      password: process.env.REDIS_PASSWORD || undefined,
+    },
+    concurrency: 3,
+  }
+);
+
+// Event listeners for monitoring
+googleEventsWorker.on('completed', (job) => {
+  console.log(`Job ${job.id} completed successfully`);
+});
+
+googleEventsWorker.on('failed', (job, err) => {
+  console.error(`Job ${job.id} failed with error:`, err.message);
+});
+
+googleCalendarListWorker.on('completed', (job) => {
+  console.log(`Calendar list job ${job.id} completed successfully`);
+});
+
+googleCalendarListWorker.on('failed', (job, err) => {
+  console.error(`Calendar list job ${job.id} failed with error:`, err.message);
+});

@@ -15,10 +15,13 @@ import sseRoutes from './routes/sseRoutes.js';
 import agenda from './utils/agendaUtils.js';
 import { redisClient } from './config/redis.js';
 
+// Import workers to start them
+import { googleEventsWorker, googleCalendarListWorker } from './workers/googleWebhookWorker.js';
+
 dotenv.config();
 
 const app = express();
-//checking workflow
+
 // Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
@@ -28,7 +31,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Routes
-app.use('/api/auth',authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/google', googleRoutes);
 app.use('/api/microsoft', microsoftRoutes);
 app.use('/api/user', userRoutes);
@@ -45,6 +48,11 @@ const gracefulShutdown = async () => {
   console.log('Shutting down gracefully...');
   
   try {
+    // Close BullMQ workers
+    await googleEventsWorker.close();
+    await googleCalendarListWorker.close();
+    console.log('BullMQ workers closed');
+    
     // Close Redis connection
     await redisClient.quit();
     console.log('Redis connection closed');
@@ -75,6 +83,9 @@ app.listen(PORT, async () => {
     // Redis connection is already established by importing the client
     // Just verify it's connected
     console.log('Redis status:', redisClient.status);
+    
+    // Workers are already running by importing them
+    console.log('✅ BullMQ workers initialized and running');
     
     console.log(`Server running on port ${PORT}`);
   } catch (error) {

@@ -16,6 +16,7 @@
     "agenda": "^5.0.0",
     "axios": "^1.10.0",
     "bcrypt": "^6.0.0",
+    "bullmq": "^5.65.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "date-fns-tz": "^3.2.0",
