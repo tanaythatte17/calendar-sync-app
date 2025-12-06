@@ -39,4 +39,16 @@ export const googleCalendarListQueue = new Queue('google-calendar-list', {
   defaultJobOptions,
 });
 
+// Queue fir Microsoft Calendar Events sync
+export const microsoftWebhookQueue = new Queue('microsoft-webhook', {
+  connection: redisConnection,
+  defaultJobOptions,  
+});
+
+// Queue for Microsoft Calendar List sync
+export const microsoftCalendarListQueue = new Queue('microsoft-calendar-list', {
+  connection: redisConnection,
+  defaultJobOptions,
+});
+
 console.log('✅ BullMQ queues initialized');
