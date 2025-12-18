@@ -33,5 +33,6 @@ jobs:
       - name: Deploy to VPS
         run: |
           rsync -az --delete \
-          frontend-dist/ \
-          tanay@34.187.241.217:/var/www/calendar-sync-app/frontend/dist
+            -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+            frontend-dist/ \
+            tanay@34.187.241.217:/var/www/calendar-sync-app/frontend/dist

@@ -5,6 +5,7 @@ import { format, startOfWeek, endOfWeek, eachDayOfInterval} from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { FaChevronLeft, FaChevronRight, FaCalendar, FaList, FaCalendarWeek } from 'react-icons/fa';
 
+//added comments
 interface Event {
   _id: string;
   calendarAccountId: string;
