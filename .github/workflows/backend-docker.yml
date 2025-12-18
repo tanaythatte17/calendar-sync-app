@@ -1,0 +1,27 @@
+name: Build & Push Backend Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
+
+      - name: Build backend image
+        run: |
+          docker build \
+            -t ghcr.io/${{ secrets.GHCR_USERNAME }}/calendar-backend:latest \
+            ./backend
+
+      - name: Push backend image
+        run: docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/calendar-backend:latest
