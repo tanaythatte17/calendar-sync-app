@@ -8,16 +8,7 @@ services:
     env_file:
       - ./backend/.env
     ports:
-      - "3001:3000"    # Backend #1 available at localhost:3001
-    networks:
-      - calendar-net
-
-  frontend:
-    container_name: calendar-frontend
-    image: ghcr.io/tanaythatte17/calendar-frontend:latest
-    restart: always
-    ports:
-      - "8080:80"       # Public frontend on port 8080
+      - "3001:3000"
     networks:
       - calendar-net
 
@@ -28,11 +19,4 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     command: >
-      --interval 300
-      --cleanup
-      calendar-backend-1
-      calendar-frontend
-
-networks:
-  calendar-net:
-    driver: bridge
+      --interval 30
