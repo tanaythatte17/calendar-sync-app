@@ -10,12 +10,27 @@ const UserSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true
-    // Store hashed password using bcrypt or argon2
+    required: false  // Changed to false for OAuth users
   },
   name: {
     type: String,
     required: true
+  },
+  // OAuth provider fields
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true  // Allows null values while maintaining uniqueness
+  },
+  microsoftId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  provider: {
+    type: String,
+    enum: ['local', 'google', 'microsoft'],
+    default: 'local'
   },
   calendarAccounts: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -31,7 +46,6 @@ const UserSchema = new mongoose.Schema({
   },
   forgotPasswordOTP: { type: Number },
   forgotPasswordOTPExpires: { type: Date },
-
   resetPasswordToken: { type: String },  
   resetPasswordTokenExpires: { type: Date }
 });

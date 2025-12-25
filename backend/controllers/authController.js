@@ -1,4 +1,16 @@
-import { signup as signupService, login as loginService, logout as logoutService, getMe as getMeService, forgotPasswordService, verifyOTPService, setNewPasswordService } from "../services/authService.js";
+import { 
+  signup as signupService, 
+  login as loginService, 
+  logout as logoutService, 
+  getMe as getMeService, 
+  forgotPasswordService, 
+  verifyOTPService, 
+  setNewPasswordService,
+  getGoogleAuthURLService,
+  handleGoogleCallbackService,
+  getMicrosoftAuthURLService,
+  handleMicrosoftCallbackService
+} from "../services/authService.js";
 
 export const signup = async (req,res) => {
     try{
@@ -83,3 +95,61 @@ export const setNewPassword = async (req, res) => {
         res.status(status).json({ error: error.message || "Error" });
     }
 }
+
+export const getGoogleAuthURL = async (req, res) => {
+  try {
+    const result = await getGoogleAuthURLService();
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error generating Google auth URL:', error);
+    res.status(500).json({ error: 'Failed to generate authorization URL' });
+  }
+};
+
+export const handleGoogleCallback = async (req, res) => {
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=no_code`);
+    }
+
+    const result = await handleGoogleCallbackService(code, res);
+
+    // Redirect to frontend success page
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
+
+  } catch (error) {
+    console.error('Google callback error:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+  }
+};
+
+export const getMicrosoftAuthURL = async (req, res) => {
+  try {
+    const result = await getMicrosoftAuthURLService();
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error generating Microsoft auth URL:', error);
+    res.status(500).json({ error: 'Failed to generate authorization URL' });
+  }
+};
+
+export const handleMicrosoftCallback = async (req, res) => {
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.redirect(`${process.env.FRONTEND_URL}/login?error=no_code`);
+    }
+
+    const result = await handleMicrosoftCallbackService(code, res);
+
+    // Redirect to frontend success page
+    res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
+
+  } catch (error) {
+    console.error('Microsoft callback error:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+  }
+};

@@ -3,6 +3,10 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import generateTokenAndSetCookie from "../utils/generateToken.js";
 import { sendOTPEmail } from "../utils/sendMail.js";
+import { google } from "googleapis";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 export async function signup(res, { name, email, password }) {
   const existing = await User.findOne({ email });
@@ -193,4 +197,165 @@ export const setNewPasswordService = async (email, newPassword, confirmNewPasswo
   return ({
     "message":"Password reset successfully"
   });
+}
+
+export async function getGoogleAuthURLService() {
+
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_AUTH_REDIRECT_URI
+  );
+
+  const scopes = [
+    'openid',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'https://www.googleapis.com/auth/userinfo.email',
+  ];
+
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: scopes,
+    prompt: 'consent',
+  });
+
+  return { url: authUrl };
+}
+
+export async function handleGoogleCallbackService(code, res) {
+  try {
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_AUTH_REDIRECT_URI
+    );
+
+    // Exchange code for tokens
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+
+    // Get user info
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const { data } = await oauth2.userinfo.get();
+
+    // Check if user exists with Google ID
+    let user = await User.findOne({ googleId: data.id });
+
+    if (!user) {
+      // Check if user exists with same email (account linking)
+      user = await User.findOne({ email: data.email });
+      
+      if (user) {
+        // Link Google account to existing user
+        user.googleId = data.id;
+        user.provider = 'google';
+        await user.save();
+      } else {
+        // Create new user
+        user = new User({
+          googleId: data.id,
+          name: data.name,
+          email: data.email,
+          provider: 'google',
+        });
+        await user.save();
+      }
+    }
+
+    // Generate JWT token and set cookie
+    const token = generateTokenAndSetCookie(user._id, res);
+
+    return {
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      }
+    };
+  } catch (error) {
+    console.error('Google callback error:', error);
+    throw error;
+  }
+}
+
+export async function getMicrosoftAuthURLService() {
+  const authUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?` +
+    `client_id=${process.env.MICROSOFT_CLIENT_ID}` +
+    `&response_type=code` +
+    `&redirect_uri=${encodeURIComponent(process.env.MICROSOFT_AUTH_REDIRECT_URI)}` +
+    `&scope=${encodeURIComponent('openid profile email User.Read')}` +
+    `&response_mode=query`;
+
+  return { url: authUrl };
+}
+
+export async function handleMicrosoftCallbackService(code, res) {
+  try {
+    // Exchange code for token
+    const tokenResponse = await fetch(
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: process.env.MICROSOFT_CLIENT_ID,
+          client_secret: process.env.MICROSOFT_CLIENT_SECRET,
+          code,
+          redirect_uri: process.env.MICROSOFT_AUTH_REDIRECT_URI,
+          grant_type: 'authorization_code',
+        }),
+      }
+    );
+
+    const tokens = await tokenResponse.json();
+
+    if (!tokens.access_token) {
+      throw new Error('Failed to get access token');
+    }
+
+    // Get user info from Microsoft Graph
+    const userResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+
+    const userData = await userResponse.json();
+
+    // Check if user exists with Microsoft ID
+    let user = await User.findOne({ microsoftId: userData.id });
+
+    if (!user) {
+      // Check if user exists with same email (account linking)
+      user = await User.findOne({ email: userData.mail || userData.userPrincipalName });
+      
+      if (user) {
+        // Link Microsoft account to existing user
+        user.microsoftId = userData.id;
+        user.provider = 'microsoft';
+        await user.save();
+      } else {
+        // Create new user
+        user = new User({
+          microsoftId: userData.id,
+          name: userData.displayName,
+          email: userData.mail || userData.userPrincipalName,
+          provider: 'microsoft',
+        });
+        await user.save();
+      }
+    }
+
+    // Generate JWT token and set cookie
+    const token = generateTokenAndSetCookie(user._id, res);
+
+    return {
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      }
+    };
+  } catch (error) {
+    console.error('Microsoft callback error:', error);
+    throw error;
+  }
 }

@@ -2,13 +2,12 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-// Add timezone to user context
+
 export interface User {
   _id: string;
   email: string;
   name?: string;
   timezone?: string;
-  // ...other fields
 }
 
 interface AuthContextType {
@@ -19,6 +18,9 @@ interface AuthContextType {
   logout: () => Promise<void>;
   isAuthenticated: boolean;
   updateUserTimezone: (timezone: string) => Promise<boolean>;
+  // OAuth methods
+  loginWithGoogle: () => Promise<void>;
+  loginWithMicrosoft: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -29,7 +31,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true // Ensure cookies are sent and received
+  withCredentials: true
 });
 
 export { api };
@@ -46,7 +48,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const response = await api.get('/auth/me');
       setUser(response.data.data);
-      // Fetch full profile (including timezone) after auth check
       await fetchUserProfile();
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -56,13 +57,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Define fetchUserProfile before login/register
   const fetchUserProfile = async () => {
     try {
       const res = await api.get(`${API_URL}/user/profile`);
       setUser(res.data);
     } catch (err) {
-      // handle error
+      console.error('Failed to fetch user profile:', err);
     }
   };
 
@@ -72,9 +72,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email,
         password
       });
-      const { _id, name, email: userEmail} = response.data;
+      const { _id, name, email: userEmail } = response.data;
       setUser({ _id, name, email: userEmail });
-      await fetchUserProfile(); // Fetch user profile after successful login
+      await fetchUserProfile();
     } catch (error) {
       console.error('Login failed:', error);
       throw error;
@@ -89,9 +89,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         password,
         confirmPassword
       });
-      const { _id, name: userName, email: userEmail,} = response.data;
+      const { _id, name: userName, email: userEmail } = response.data;
       setUser({ _id, name: userName, email: userEmail });
-      await fetchUserProfile(); // Fetch user profile after successful registration
+      await fetchUserProfile();
     } catch (error) {
       console.error('Registration failed:', error);
       throw error;
@@ -101,19 +101,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     try {
       await api.post('/auth/logout');
-      // As an extra guard, explicitly remove the cookie on client for dev tools display
       try {
         document.cookie = 'jwt=; Max-Age=0; path=/; SameSite=None; Secure';
       } catch {}
     } catch (error) {
       console.error('Logout failed:', error);
     } finally {
-      localStorage.removeItem('token'); // clear from localStorage
+      localStorage.removeItem('token');
       setUser(null);
     }
   };
 
-  // Add updateUserTimezone function
   const updateUserTimezone = async (timezone: string) => {
     try {
       const res = await api.put(`${API_URL}/user/timezone`, { timezone });
@@ -124,6 +122,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // OAuth Methods
+  const loginWithGoogle = async () => {
+    try {
+      const response = await api.get('/auth/google/auth');
+      if (response.data.url) {
+        // Redirect to Google OAuth
+        window.location.href = response.data.url;
+      } else {
+        throw new Error('Failed to get Google authorization URL');
+      }
+    } catch (error) {
+      console.error('Google login failed:', error);
+      throw error;
+    }
+  };
+
+  const loginWithMicrosoft = async () => {
+    try {
+      const response = await api.get('/auth/microsoft/auth');
+      if (response.data.url) {
+        // Redirect to Microsoft OAuth
+        window.location.href = response.data.url;
+      } else {
+        throw new Error('Failed to get Microsoft authorization URL');
+      }
+    } catch (error) {
+      console.error('Microsoft login failed:', error);
+      throw error;
+    }
+  };
+
   const value = {
     user,
     loading,
@@ -131,7 +160,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     register,
     logout,
     isAuthenticated: !!user,
-    updateUserTimezone: updateUserTimezone,
+    updateUserTimezone,
+    loginWithGoogle,
+    loginWithMicrosoft,
   };
 
   return (
@@ -147,4 +178,4 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}; 
+};

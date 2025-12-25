@@ -12,6 +12,7 @@ import Navbar from './components/Navbar';
 import Policy from './components/Policy';
 import TermsOfService from './components/TermsOfService';
 import ForgotPassword from './components/ForgotPassword';
+import AuthSuccess from './components/AuthSuccess';
 import { HelmetProvider } from 'react-helmet-async';
 
 function App() {
@@ -27,6 +28,7 @@ function App() {
                 <Route path="/" element={<Landing />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
+                <Route path="/auth/success" element={<AuthSuccess />} />
                 <Route path="/how-it-works" element={<HowItWorks/>} />
                 <Route
                   path="/dashboard"
