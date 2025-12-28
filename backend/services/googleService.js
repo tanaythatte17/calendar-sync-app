@@ -239,19 +239,118 @@ export async function createGoogleNotifications(userId, userEmail) {
   return { calendarListChannel: calendarListChannelId, eventChannels: eventChannels.length };
 }
 
-export async function renewNotification(accountId, channelType, calendarId, oldChannelId, resourceId) {
+export async function renewNotification(
+  accountId,
+  channelType,
+  calendarId,
+  oldChannelId,
+  resourceId
+) {
   const account = await calendarAccount.findById(accountId);
   if (!account) return;
 
-  const calendar = google.calendar({ version: "v3", auth: oauth2Client });
-  await calendar.channels.stop({ requestBody: { id: oldChannelId, resourceId } });
-  const newChannelId = uuidv4();
-  const expirationTime = Date.now() + (3 * 24 * 60 * 60 * 1000);
-  if (channelType === "calendar-list") {
-    await calendar.calendarList.watch({ requestBody: { id: newChannelId, type: "web_hook", address: `${process.env.WEBHOOK_BASE_URL}/webhook/google/list`, token: JSON.stringify({ accountId }), expiration: expirationTime } });
-  } else if (channelType === "events") {
-    await calendar.events.watch({ calendarId, requestBody: { id: newChannelId, type: "web_hook", address: `${process.env.WEBHOOK_BASE_URL}/webhook/google/events`, token: JSON.stringify({ accountId, calendarId }), expiration: expirationTime } });
+  /* ------------------ Refresh token if needed ------------------ */
+  if (account.expiresAt && account.expiresAt < new Date()) {
+    const tokens = await refreshCalendarAccessToken(
+      account._id,
+      account.refreshToken,
+      'https://oauth2.googleapis.com/token',
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
+
+    account.accessToken = tokens.accessToken;
+    account.expiresAt = tokens.expiresAt;
+    await account.save();
   }
+
+  oauth2Client.setCredentials({
+    access_token: account.accessToken,
+    refresh_token: account.refreshToken,
+  });
+
+  const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+  /* ------------------ Stop old channel (best-effort) ------------------ */
+  try {
+    await calendar.channels.stop({
+      requestBody: { id: oldChannelId, resourceId },
+    });
+  } catch (err) {
+    console.warn('Google channel stop failed (likely expired)');
+  }
+
+  /* ------------------ Create new channel ------------------ */
+  const newChannelId = uuidv4();
+  const expirationTime = Date.now() + 3 * 24 * 60 * 60 * 1000;
+
+  let response;
+
+  if (channelType === 'calendar-list') {
+    response = await calendar.calendarList.watch({
+      requestBody: {
+        id: newChannelId,
+        type: 'web_hook',
+        address: `${process.env.WEBHOOK_BASE_URL}/webhook/google/list`,
+        token: JSON.stringify({
+          accountId: account._id.toString(),
+          type: 'calendar-list',
+        }),
+        expiration: expirationTime,
+      },
+    });
+
+    account.webhookChannels.calendarList = {
+      channelId: newChannelId,
+      resourceId: response.data.resourceId,
+      expiration: new Date(expirationTime),
+    };
+  }
+
+  if (channelType === 'events') {
+    response = await calendar.events.watch({
+      calendarId,
+      requestBody: {
+        id: newChannelId,
+        type: 'web_hook',
+        address: `${process.env.WEBHOOK_BASE_URL}/webhook/google/events`,
+        token: Buffer.from(
+          JSON.stringify({ accountId: account._id.toString(), calendarId })
+        ).toString('base64'),
+        expiration: expirationTime,
+      },
+    });
+
+    const idx = account.webhookChannels.events.findIndex(
+      e => e.calendarId === calendarId
+    );
+
+    const updated = {
+      calendarId,
+      calendarName:
+        account.calendarList.find(c => c.calendarId === calendarId)?.name,
+      channelId: newChannelId,
+      resourceId: response.data.resourceId,
+      expiration: new Date(expirationTime),
+    };
+
+    if (idx >= 0) account.webhookChannels.events[idx] = updated;
+    else account.webhookChannels.events.push(updated);
+  }
+
+  await account.save();
+
+  /* ------------------ Schedule next renewal ------------------ */
+  await scheduleRenewal(
+    expirationTime,
+    accountId,
+    channelType,
+    calendarId,
+    newChannelId,
+    response.data.resourceId
+  );
+
+  console.log(`✅ Google ${channelType} renewed for account ${accountId}`);
 }
 
 export async function performFullSync(calendar, calendarId, accountId) {

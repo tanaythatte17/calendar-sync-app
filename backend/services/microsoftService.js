@@ -219,26 +219,116 @@ export async function createMicrosoftNotifications(userId, userEmail) {
   return { calendarListSubscription: calendarListSubscriptionId, eventSubscriptions: eventSubscriptions.length };
 }
 
-export async function renewMicrosoftNotification(accountId, subscriptionType, calendarId, oldSubscriptionId) {
+export async function renewMicrosoftNotification(
+  accountId,
+  subscriptionType,
+  calendarId,
+  oldSubscriptionId
+) {
   const account = await calendarAccount.findById(accountId);
   if (!account) return;
+
+  /* ------------------ Refresh token if needed ------------------ */
   if (account.expiresAt && account.expiresAt < new Date()) {
-    const tokens = await refreshCalendarAccessToken(account._id, account.refreshToken, 'https://login.microsoftonline.com/common/oauth2/v2.0/token', process.env.MICROSOFT_CLIENT_ID, process.env.MICROSOFT_CLIENT_SECRET);
+    const tokens = await refreshCalendarAccessToken(
+      account._id,
+      account.refreshToken,
+      'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+      process.env.MICROSOFT_CLIENT_ID,
+      process.env.MICROSOFT_CLIENT_SECRET
+    );
+
     account.accessToken = tokens.accessToken;
+    account.expiresAt = tokens.expiresAt;
+    await account.save();
   }
-  const headers = { Authorization: `Bearer ${account.accessToken}`, 'Content-Type': 'application/json' };
-  try { await axios.delete(`https://graph.microsoft.com/v1.0/subscriptions/${oldSubscriptionId}`, { headers }); } catch {}
-  const expirationDateTime = new Date(); expirationDateTime.setDate(expirationDateTime.getDate() + 3);
+
+  const headers = {
+    Authorization: `Bearer ${account.accessToken}`,
+    'Content-Type': 'application/json',
+  };
+
+  /* ------------------ Delete old subscription ------------------ */
+  try {
+    await axios.delete(
+      `https://graph.microsoft.com/v1.0/subscriptions/${oldSubscriptionId}`,
+      { headers }
+    );
+  } catch {
+    console.warn('Microsoft subscription already expired');
+  }
+
+  /* ------------------ Create new subscription ------------------ */
+  const expirationDateTime = new Date();
+  expirationDateTime.setDate(expirationDateTime.getDate() + 3);
   const expirationTime = expirationDateTime.getTime();
-  let response;
-  if (subscriptionType === "calendar-list") {
-    const payload = { changeType: 'created,updated,deleted', notificationUrl: `${process.env.WEBHOOK_BASE_URL}/api/webhook/microsoft/list`, resource: 'me/calendars', expirationDateTime: expirationDateTime.toISOString(), clientState: JSON.stringify({ accountId }) };
-    response = await axios.post('https://graph.microsoft.com/v1.0/subscriptions', payload, { headers });
-  } else if (subscriptionType === "events") {
-    const payload = { changeType: 'created,updated,deleted', notificationUrl: `${process.env.WEBHOOK_BASE_URL}/api/webhook/microsoft/events`, resource: `me/calendars/${calendarId}/events`, expirationDateTime: expirationDateTime.toISOString(), clientState: JSON.stringify({ accountId, calendarId }) };
-    response = await axios.post('https://graph.microsoft.com/v1.0/subscriptions', payload, { headers });
+
+  let payload;
+  if (subscriptionType === 'calendar-list') {
+    payload = {
+      changeType: 'updated,deleted',
+      notificationUrl: `${process.env.WEBHOOK_BASE_URL}/webhook/microsoft/list`,
+      resource: 'me/calendars',
+      expirationDateTime: expirationDateTime.toISOString(),
+      clientState: Buffer.from(
+        JSON.stringify({ accountId: account._id.toString(), type: 'calendar-list' })
+      ).toString('base64').slice(0, 128),
+    };
+  } else {
+    payload = {
+      changeType: 'created,updated,deleted',
+      notificationUrl: `${process.env.WEBHOOK_BASE_URL}/webhook/microsoft/events`,
+      resource: `me/calendars/${calendarId}/events`,
+      expirationDateTime: expirationDateTime.toISOString(),
+      clientState: Buffer.from(
+        JSON.stringify({ accountId: account._id.toString(), calendarId })
+      ).toString('base64').slice(0, 128),
+    };
   }
-  await scheduleMicrosoftRenewal(expirationTime, accountId, subscriptionType, calendarId, response.data.id);
+
+  const response = await axios.post(
+    'https://graph.microsoft.com/v1.0/subscriptions',
+    payload,
+    { headers }
+  );
+
+  /* ------------------ Persist ------------------ */
+  if (subscriptionType === 'calendar-list') {
+    account.webhookChannels.calendarList = {
+      channelId: response.data.id,
+      resourceId: 'me/calendars',
+      expiration: new Date(expirationTime),
+    };
+  } else {
+    const idx = account.webhookChannels.events.findIndex(
+      e => e.calendarId === calendarId
+    );
+
+    const updated = {
+      calendarId,
+      calendarName:
+        account.calendarList.find(c => c.calendarId === calendarId)?.name,
+      channelId: response.data.id,
+      resourceId: `me/calendars/${calendarId}/events`,
+      expiration: new Date(expirationTime),
+    };
+
+    if (idx >= 0) account.webhookChannels.events[idx] = updated;
+    else account.webhookChannels.events.push(updated);
+  }
+
+  await account.save();
+
+  /* ------------------ Schedule next renewal ------------------ */
+  await scheduleMicrosoftRenewal(
+    expirationTime,
+    accountId,
+    subscriptionType,
+    calendarId,
+    response.data.id
+  );
+
+  console.log(`✅ Microsoft ${subscriptionType} renewed for account ${accountId}`);
 }
 
 export async function updateMicrosoftCalendarList(account, headers) {
