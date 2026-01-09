@@ -42,6 +42,12 @@ export async function login(res, { email, password }) {
     throw error;
   }
 
+  if (user.provider && user.provider !== "local") {
+    const error = new Error(`Please login using Google or Microsoft `);
+    error.statusCode = 400;
+    throw error;
+  }
+
   const isPasswordCorrect = await bcrypt.compare(password, user.password);
   if (!isPasswordCorrect) {
     const error = new Error("Incorrect Password");
@@ -90,6 +96,12 @@ export async function forgotPasswordService(email) {
   const user = await User.findOne({ email });
   if (!user) {
     const error = new Error("User with this email does not exist");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (user.provider && user.provider !== "local") {
+    const error = new Error(`Account linked to Google or Microsoft. Password reset not applicable.`);
     error.statusCode = 400;
     throw error;
   }
