@@ -87,7 +87,7 @@ export async function callback(code, state, cookies, clearCookie, redirect) {
     await User.findByIdAndUpdate(userId, { $push: { calendarAccounts: newCalendarAccount._id } }, { new: true });
   }
 
-  redirect(`${process.env.FRONTEND_URL}/dashboard`);
+  redirect(`${process.env.FRONTEND_URL}/dashboard?provider=google&status=connected`);
 }
 
 export async function sync(userId, userEmail) {

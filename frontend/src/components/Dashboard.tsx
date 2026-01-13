@@ -110,6 +110,7 @@ const Dashboard: React.FC = () => {
   const [tzSaveStatus, setTzSaveStatus] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [connectionSuccess, setConnectionSuccess] = useState<string | null>(null);
 
   // Simplified lazy loading state - track loaded ranges with strings for easier comparison
   const loadedMinDateRef = useRef<Date | null>(null);
@@ -165,6 +166,24 @@ const Dashboard: React.FC = () => {
     const found = userTimeZones.find(tz => tz.value === user?.timezone);
     setSelectedUserTimeZone(found ? found.value : 'UTC');
   }, [user?.timezone]);
+
+  // Check for connection status in URL params
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const provider = urlParams.get('provider');
+    const status = urlParams.get('status');
+    
+    if (provider && status === 'connected') {
+      const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
+      setConnectionSuccess(`${providerName} account connected successfully! Click "Sync" to import your events.`);
+      
+      // Clean up URL without reloading
+      window.history.replaceState({}, '', window.location.pathname);
+      
+      // Auto-dismiss after 10 seconds
+      setTimeout(() => setConnectionSuccess(null), 10000);
+    }
+  }, []);
 
   const handleTimezoneSave = async () => {
     const success = await updateUserTimezone(selectedUserTimeZone);
@@ -246,10 +265,10 @@ const Dashboard: React.FC = () => {
     const maxLoaded = new Date(loadedMaxDateRef.current.getFullYear(), loadedMaxDateRef.current.getMonth(), 1);
 
     // Calculate month difference
-    const monthsFromMin = (viewMonth.getFullYear() - minLoaded.getFullYear()) * 12 + 
-                          (viewMonth.getMonth() - minLoaded.getMonth());
-    const monthsFromMax = (maxLoaded.getFullYear() - viewMonth.getFullYear()) * 12 + 
-                          (maxLoaded.getMonth() - viewMonth.getMonth());
+    const monthsFromMin = (viewMonth.getFullYear() - minLoaded.getFullYear()) * 12 +
+                           (viewMonth.getMonth() - minLoaded.getMonth());
+    const monthsFromMax = (maxLoaded.getFullYear() - viewMonth.getFullYear()) * 12 +
+                           (maxLoaded.getMonth() - viewMonth.getMonth());
 
     // If within 2 months of the minimum boundary, load 3 more months before
     if (monthsFromMin <= 2) {
@@ -407,9 +426,9 @@ const Dashboard: React.FC = () => {
       let createdEvents: any[] = [];
       for (const accountId of Object.keys(selectedCalendars)) {
         if (selectedCalendars[accountId]) {
-          const account = accounts.find(a =>
-            a.id === accountId ||
-            a._id === accountId ||
+          const account = accounts.find(a => 
+            a.id === accountId || 
+            a._id === accountId || 
             `${a.provider}-${a.email}` === accountId
           );
           if (!account) continue;
@@ -453,6 +472,26 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      {/* Success Message for Account Connection */}
+      {connectionSuccess && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          <div className="p-4 bg-green-50 border border-green-200 rounded-xl shadow-sm">
+            <p className="text-green-700 flex items-center">
+              <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {connectionSuccess}
+            </p>
+            <button 
+              onClick={() => setConnectionSuccess(null)}
+              className="mt-2 text-sm text-green-700 hover:text-green-900 underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Error Display */}
       {error && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">

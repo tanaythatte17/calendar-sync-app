@@ -91,7 +91,7 @@ export async function callback(query, cookies, clearCookie, redirect) {
     await newCalendarAccount.save();
     await User.findByIdAndUpdate(userId, { $push: { calendarAccounts: newCalendarAccount._id } }, { new: true });
   }
-  redirect(`${process.env.FRONTEND_URL}/dashboard`);
+  redirect(`${process.env.FRONTEND_URL}/dashboard?provider=microsoft&status=connected`);
 }
 
 export async function sync(userId, userEmail) {
