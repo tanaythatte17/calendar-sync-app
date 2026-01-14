@@ -96,103 +96,104 @@ const Landing: React.FC = () => {
           }}
         >
           <Container maxWidth="lg">
-            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'center', gap: 6 }}>
-              <Box sx={{ flex: 1 }}>
-                <Typography 
-                  variant="h1" 
-                  component="h1" 
-                  gutterBottom 
-                  sx={{ 
-                    fontWeight: 700,
-                    fontSize: { xs: '2.5rem', md: '3.5rem' },
-                    lineHeight: 1.2,
-                    mb: 3
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography 
+                variant="h1" 
+                component="h1" 
+                gutterBottom 
+                sx={{ 
+                  fontWeight: 700,
+                  fontSize: { xs: '2.5rem', md: '3.5rem' },
+                  lineHeight: 1.2,
+                  mb: 3
+                }}
+              >
+                Stop Switching Tabs Between
+                <br />
+                <span style={{ color: '#fbbf24' }}>Google & Microsoft Calendars</span>
+              </Typography>
+              <Typography 
+                variant="h2" 
+                component="h2"
+                sx={{ 
+                  mb: 4, 
+                  opacity: 0.9,
+                  lineHeight: 1.5,
+                  fontWeight: 300,
+                  fontSize: { xs: '1.25rem', md: '1.5rem' },
+                  maxWidth: 900,
+                  mx: 'auto'
+                }}
+              >
+                Tired of switching between calendar apps? Get real-time calendar sync across Google Calendar and Outlook in one unified dashboard. See all your meetings, events, and appointments in a single view.
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', mb: 6 }}>
+                <Button
+                  component={RouterLink}
+                  to="/how-it-works"
+                  variant="outlined"
+                  size="large"
+                  sx={{
+                    color: '#ffffff',
+                    borderColor: 'rgba(255, 255, 255, 0.5)',
+                    px: 6,
+                    py: 1.5,
+                    fontSize: '1.1rem',
+                    fontWeight: 600,
+                    borderRadius: 3,
+                    borderWidth: 2,
+                    textTransform: 'none',
+                    backdropFilter: 'blur(10px)',
+                    bgcolor: 'rgba(255, 255, 255, 0.1)',
+                    '&:hover': {
+                      bgcolor: 'rgba(255, 255, 255, 0.2)',
+                      borderColor: '#ffffff',
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 15px 35px rgba(255, 255, 255, 0.2)',
+                    },
+                    transition: 'all 0.3s ease-in-out'
                   }}
                 >
-                  Stop Switching Tabs Between
-                  <br />
-                  <span style={{ color: '#fbbf24' }}>Google & Microsoft Calendars</span>
-                </Typography>
-                <Typography 
-                  variant="h2" 
-                  component="h2"
-                  sx={{ 
-                    mb: 4, 
-                    opacity: 0.9,
-                    lineHeight: 1.5,
-                    fontWeight: 300,
-                    fontSize: { xs: '1.25rem', md: '1.5rem' }
+                  How It Works
+                </Button>
+                
+                <Button
+                  component={RouterLink}
+                  to="/login"
+                  variant="outlined"
+                  size="large"
+                  sx={{
+                    color: '#ffffff',
+                    borderColor: 'rgba(255, 255, 255, 0.5)',
+                    px: 6,
+                    py: 1.5,
+                    fontSize: '1.1rem',
+                    fontWeight: 600,
+                    borderRadius: 3,
+                    borderWidth: 2,
+                    textTransform: 'none',
+                    backdropFilter: 'blur(10px)',
+                    bgcolor: 'rgba(255, 255, 255, 0.1)',
+                    '&:hover': {
+                      bgcolor: 'rgba(255, 255, 255, 0.2)',
+                      borderColor: '#ffffff',
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 15px 35px rgba(255, 255, 255, 0.2)',
+                    },
+                    transition: 'all 0.3s ease-in-out'
                   }}
                 >
-                  Tired of switching between calendar apps? Get real-time calendar sync across Google Calendar and Outlook in one unified dashboard. See all your meetings, events, and appointments in a single view.
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Button
-                    component={RouterLink}
-                    to="/how-it-works"
-                    variant="outlined"
-                    size="large"
-                    sx={{
-                      color: '#ffffff',
-                      borderColor: 'rgba(255, 255, 255, 0.5)',
-                      px: 6,
-                      py: 1.5,
-                      fontSize: '1.1rem',
-                      fontWeight: 600,
-                      borderRadius: 3,
-                      borderWidth: 2,
-                      textTransform: 'none',
-                      backdropFilter: 'blur(10px)',
-                      bgcolor: 'rgba(255, 255, 255, 0.1)',
-                      '&:hover': {
-                        bgcolor: 'rgba(255, 255, 255, 0.2)',
-                        borderColor: '#ffffff',
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 15px 35px rgba(255, 255, 255, 0.2)',
-                      },
-                      transition: 'all 0.3s ease-in-out'
-                    }}
-                  >
-                    How It Works
-                  </Button>
-                  
-                  <Button
-                    component={RouterLink}
-                    to="/login"
-                    variant="outlined"
-                    size="large"
-                    sx={{
-                      color: '#ffffff',
-                      borderColor: 'rgba(255, 255, 255, 0.5)',
-                      px: 6,
-                      py: 1.5,
-                      fontSize: '1.1rem',
-                      fontWeight: 600,
-                      borderRadius: 3,
-                      borderWidth: 2,
-                      textTransform: 'none',
-                      backdropFilter: 'blur(10px)',
-                      bgcolor: 'rgba(255, 255, 255, 0.1)',
-                      '&:hover': {
-                        bgcolor: 'rgba(255, 255, 255, 0.2)',
-                        borderColor: '#ffffff',
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 15px 35px rgba(255, 255, 255, 0.2)',
-                      },
-                      transition: 'all 0.3s ease-in-out'
-                    }}
-                  >
-                    Sign In
-                  </Button>
-                </Box>
+                  Sign In
+                </Button>
               </Box>
               
-              <Box sx={{ flex: 1, display: { xs: 'none', md: 'flex' }, justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+              {/* Video Section */}
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                 <Box
                   sx={{
                     width: '100%',
-                    maxWidth: 500,
-                    height: 400,
+                    maxWidth: 1000,
+                    height: { xs: 300, sm: 400, md: 550 },
                     background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
                     borderRadius: 4,
                     backdropFilter: 'blur(10px)',
@@ -201,9 +202,26 @@ const Landing: React.FC = () => {
                     alignItems: 'center',
                     justifyContent: 'center',
                     position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
                   }}
                 >
-                  <CalendarMonthIcon sx={{ fontSize: 120, opacity: 0.8 }} />
+                  <video
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      borderRadius: '16px',
+                    }}
+                  >
+                    <source src="/demo_video.mp4" type="video/mp4" />
+                    {/* Fallback icon if video doesn't load */}
+                    <CalendarMonthIcon sx={{ fontSize: 120, opacity: 0.8 }} />
+                  </video>
                 </Box>
               </Box>
             </Box>
