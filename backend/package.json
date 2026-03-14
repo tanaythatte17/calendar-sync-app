@@ -13,6 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@polar-sh/sdk": "^0.42.5",
     "agenda": "^5.0.0",
     "axios": "^1.10.0",
     "bcrypt": "^6.0.0",

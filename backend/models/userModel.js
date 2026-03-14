@@ -47,7 +47,11 @@ const UserSchema = new mongoose.Schema({
   forgotPasswordOTP: { type: Number },
   forgotPasswordOTPExpires: { type: Date },
   resetPasswordToken: { type: String },  
-  resetPasswordTokenExpires: { type: Date }
+  resetPasswordTokenExpires: { type: Date },
+  subscription: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subscription'
+  }
 });
 
 const User = mongoose.model("User", UserSchema);

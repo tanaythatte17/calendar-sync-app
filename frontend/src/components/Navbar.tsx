@@ -191,6 +191,7 @@ const Navbar: React.FC = () => {
                   <button
                     onClick={() => {
                       setIsProfileDropdownOpen(false);
+                      navigate('/account');
                     }}
                     className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
                   >
@@ -243,7 +244,11 @@ const Navbar: React.FC = () => {
             {isMobileAccountOpen && (
               <div className="border-t border-gray-200 p-2 bg-gray-50">
                 <button
-                  onClick={() => { setIsMobileMenuOpen(false); setIsMobileAccountOpen(false); }}
+                  onClick={() => { 
+                    setIsMobileMenuOpen(false); 
+                    setIsMobileAccountOpen(false); 
+                    navigate('/account');
+                  }}
                   className="w-full text-left px-3 py-2 rounded-md hover:bg-white flex items-center gap-2 text-sm"
                   type="button"
                 >

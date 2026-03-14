@@ -12,6 +12,8 @@ import googleWebhookRoutes from './routes/googleWebhookRoutes.js';
 import calendarAccountRoutes from './routes/calendarAccountRoutes.js';
 import microsoftWebhookRoutes from './routes/microsoftWebhookRoutes.js';
 import sseRoutes from './routes/sseRoutes.js';
+import polarWebhookRoutes from './routes/polarWebhookRoutes.js';
+import polarCheckoutRoutes from './routes/polarCheckoutRoutes.js';
 import agenda from './utils/agendaUtils.js';
 import { redisClient } from './config/redis.js';
 
@@ -28,6 +30,9 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173',
   credentials: true
 }));
+
+app.use('/api/polar/webhooks', polarWebhookRoutes);
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -41,6 +46,7 @@ app.use('/api/webhook/google', googleWebhookRoutes);
 app.use('/api/webhook/microsoft', microsoftWebhookRoutes);
 app.use('/api/calendarAccount', calendarAccountRoutes);
 app.use('/api/sse', sseRoutes);
+app.use('/api/polar/checkout', polarCheckoutRoutes);
 
 const PORT = process.env.PORT || 5000;
 

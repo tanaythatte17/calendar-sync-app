@@ -9,6 +9,7 @@ import HowItWorks from './components/HowItWorks';
 import Dashboard from './components/Dashboard';
 import Landing from './components/Landing';
 import Navbar from './components/Navbar';
+import AccountInfo from './components/AccountInfo';
 import Policy from './components/Policy';
 import TermsOfService from './components/TermsOfService';
 import ForgotPassword from './components/ForgotPassword';
@@ -35,6 +36,14 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/account"
+                  element={
+                    <ProtectedRoute>
+                      <AccountInfo />
                     </ProtectedRoute>
                   }
                 />
