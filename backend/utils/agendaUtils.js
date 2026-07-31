@@ -5,12 +5,20 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// Initialize Agenda
+/**
+ * Agenda scheduler instance for recurring jobs.
+ * Uses MongoDB to persist job state across server restarts.
+ * Manages webhook renewal jobs for Google and Microsoft.
+ */
 const agenda = new Agenda({
   db: { address: process.env.MONGODB_URI, collection: "agendaJobs" },
 });
 
-// Google notification renewal job
+/**
+ * Job definition: Renew Google push notification channel.
+ * Stops old channel and creates new 3-day subscription.
+ * Triggered 2 hours before channel expiration.
+ */
 agenda.define("renewGoogleNotification", async (job) => {
   const { accountId, channelType, calendarId, channelId, resourceId } = job.attrs.data;
   console.log(`🔄 Renewing Google ${channelType} notification for account ${accountId}...`);
@@ -24,7 +32,11 @@ agenda.define("renewGoogleNotification", async (job) => {
   }
 });
 
-// Microsoft notification renewal job
+/**
+ * Job definition: Renew Microsoft change notification subscription.
+ * Stops old subscription and creates new 1-day subscription.
+ * Triggered 1 hour before subscription expiration.
+ */
 agenda.define("renewMicrosoftNotification", async (job) => {
   const { accountId, subscriptionType, calendarId, subscriptionId } = job.attrs.data;
   console.log(`🔄 Renewing Microsoft ${subscriptionType} subscription for account ${accountId}...`);
@@ -38,14 +50,24 @@ agenda.define("renewMicrosoftNotification", async (job) => {
   }
 });
 
-// Generic scheduling function for Google notifications
+/**
+ * Schedule Google webhook renewal job.
+ * Renews 2 hours before channel expiration to provide buffer.
+ *
+ * @param {number} expirationTime - Milliseconds since epoch when channel expires
+ * @param {string} accountId - CalendarAccount ID
+ * @param {string} channelType - 'calendar-list' or 'events'
+ * @param {string} calendarId - Calendar ID (null for calendar-list)
+ * @param {string} channelId - Google channel ID
+ * @param {string} resourceId - Google resource ID for channel
+ */
 export async function scheduleRenewal(expirationTime, accountId, channelType, calendarId, channelId, resourceId) {
   const expirationDate = new Date(expirationTime);
   const renewDate = new Date(expirationDate.getTime() - 2 * 60 * 60 * 1000); // 2 hours before
 
   await agenda.schedule(renewDate, "renewGoogleNotification", {
     accountId,
-    channelType, // "calendar-list" or "events"
+    channelType,
     calendarId,
     channelId,
     resourceId
@@ -54,14 +76,23 @@ export async function scheduleRenewal(expirationTime, accountId, channelType, ca
   console.log(`📅 Google ${channelType} renewal job scheduled for ${renewDate} (Account: ${accountId})`);
 }
 
-// Scheduling function for Microsoft notifications
+/**
+ * Schedule Microsoft webhook renewal job.
+ * Renews 1 hour before subscription expiration (Microsoft has shorter TTL).
+ *
+ * @param {number} expirationTime - Milliseconds since epoch when subscription expires
+ * @param {string} accountId - CalendarAccount ID
+ * @param {string} subscriptionType - 'calendar-list' or 'events'
+ * @param {string} calendarId - Calendar ID (null for calendar-list)
+ * @param {string} subscriptionId - Microsoft subscription ID
+ */
 export async function scheduleMicrosoftRenewal(expirationTime, accountId, subscriptionType, calendarId, subscriptionId) {
   const expirationDate = new Date(expirationTime);
-  const renewDate = new Date(expirationDate.getTime() - 60 * 60 * 1000); // 1 hour before (Microsoft has shorter expiration)
+  const renewDate = new Date(expirationDate.getTime() - 60 * 60 * 1000); // 1 hour before
 
   await agenda.schedule(renewDate, "renewMicrosoftNotification", {
     accountId,
-    subscriptionType, // "calendar-list" or "events"
+    subscriptionType,
     calendarId,
     subscriptionId
   });
@@ -69,7 +100,10 @@ export async function scheduleMicrosoftRenewal(expirationTime, accountId, subscr
   console.log(`📅 Microsoft ${subscriptionType} renewal job scheduled for ${renewDate} (Account: ${accountId})`);
 }
 
-// Optional: Cleanup expired jobs function
+/**
+ * Clean up expired renewal jobs from database.
+ * Useful for maintenance but not required for normal operation.
+ */
 export async function cleanupExpiredJobs() {
   const now = new Date();
   const result = await agenda.jobs({

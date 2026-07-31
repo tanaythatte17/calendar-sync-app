@@ -19,8 +19,19 @@ const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_REDIRECT_URI
 );
 
+/**
+ * Generate Google OAuth 2.0 authorization URL.
+ * User's browser navigates to this URL to authenticate with Google.
+ *
+ * @param {string} userIdFromQuery - User ID to store temporarily if no state
+ * @param {string} state - OAuth state parameter (JWT with userId)
+ * @param {Object} cookies - Request cookies
+ * @param {Function} setCookie - Response.cookie binding
+ * @param {Function} redirect - Response.redirect binding
+ * @returns {string} Google OAuth authorization URL
+ */
 export async function connect(userIdFromQuery, state, cookies, setCookie, redirect) {
-  const userId = state ? null : (userIdFromQuery);
+  const userId = state ? null : userIdFromQuery;
   if (!state) {
     setCookie("oauth_user_id", userId, {
       httpOnly: true,
@@ -43,6 +54,18 @@ export async function connect(userIdFromQuery, state, cookies, setCookie, redire
   return url;
 }
 
+/**
+ * Handle Google OAuth callback.
+ * Exchanges authorization code for access/refresh tokens.
+ * Creates or updates CalendarAccount and adds to user's account list.
+ *
+ * @param {string} code - OAuth authorization code from Google
+ * @param {string} state - OAuth state parameter (JWT with userId)
+ * @param {Object} cookies - Request cookies
+ * @param {Function} clearCookie - Response.clearCookie binding
+ * @param {Function} redirect - Response.redirect binding
+ * @throws {Error} If userId cannot be determined or token exchange fails
+ */
 export async function callback(code, state, cookies, clearCookie, redirect) {
   let userId;
   if (state) {
@@ -90,6 +113,16 @@ export async function callback(code, state, cookies, clearCookie, redirect) {
   redirect(`${process.env.FRONTEND_URL}/dashboard?provider=google&status=connected`);
 }
 
+/**
+ * Perform initial full synchronization of all Google calendars for a user.
+ * Fetches all calendars and events, sets up webhooks for future updates.
+ * Deletes existing events and replaces with fresh data.
+ *
+ * @param {string} userId - User ID
+ * @param {string} userEmail - Google account email
+ * @returns {Object} Sync result with calendar count, event count, and webhook setup status
+ * @throws {Error} If account not found or API call fails
+ */
 export async function sync(userId, userEmail) {
   if (!userId || !userEmail) {
     const err = new Error("Missing userId or email in request.");
@@ -118,6 +151,7 @@ export async function sync(userId, userEmail) {
   oauth2Client.setCredentials({ access_token: account.accessToken, refresh_token: account.refreshToken });
   const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
+  // Clear existing events for fresh sync
   await Event.deleteMany({ calendarAccountId: account._id, source: 'google' });
 
   const calendarListRes = await calendar.calendarList.list();
@@ -155,6 +189,16 @@ export async function sync(userId, userEmail) {
   };
 }
 
+/**
+ * Create Google push notification subscriptions for calendar changes.
+ * Sets up webhooks for calendar list and individual calendar events.
+ * Schedules webhook renewal jobs via Agenda.
+ *
+ * @param {string} userId - User ID
+ * @param {string} userEmail - Google account email
+ * @returns {Object} Channel setup result with channel ID and event channel count
+ * @throws {Error} If account not found or webhook creation fails
+ */
 export async function createGoogleNotifications(userId, userEmail) {
   const account = await calendarAccount.findOne({ userId, provider: 'google', email: userEmail });
   if (!account) {
@@ -239,6 +283,17 @@ export async function createGoogleNotifications(userId, userEmail) {
   return { calendarListChannel: calendarListChannelId, eventChannels: eventChannels.length };
 }
 
+/**
+ * Renew an expiring Google push notification subscription.
+ * Stops the old channel and creates a new one with fresh 3-day TTL.
+ * Re-schedules the next renewal job.
+ *
+ * @param {string} accountId - CalendarAccount ID
+ * @param {string} channelType - 'calendar-list' or 'events'
+ * @param {string} calendarId - Calendar ID (null for calendar-list)
+ * @param {string} oldChannelId - Channel ID to stop
+ * @param {string} resourceId - Google resource ID for the channel
+ */
 export async function renewNotification(
   accountId,
   channelType,
@@ -249,7 +304,7 @@ export async function renewNotification(
   const account = await calendarAccount.findById(accountId);
   if (!account) return;
 
-  /* ------------------ Refresh token if needed ------------------ */
+  // Refresh token if expired
   if (account.expiresAt && account.expiresAt < new Date()) {
     const tokens = await refreshCalendarAccessToken(
       account._id,
@@ -271,7 +326,7 @@ export async function renewNotification(
 
   const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
-  /* ------------------ Stop old channel (best-effort) ------------------ */
+  // Stop old channel (best-effort)
   try {
     await calendar.channels.stop({
       requestBody: { id: oldChannelId, resourceId },
@@ -280,7 +335,7 @@ export async function renewNotification(
     console.warn('Google channel stop failed (likely expired)');
   }
 
-  /* ------------------ Create new channel ------------------ */
+  // Create new channel with 3-day TTL
   const newChannelId = uuidv4();
   const expirationTime = Date.now() + 3 * 24 * 60 * 60 * 1000;
 
@@ -340,7 +395,7 @@ export async function renewNotification(
 
   await account.save();
 
-  /* ------------------ Schedule next renewal ------------------ */
+  // Schedule next renewal (2 hours before expiration)
   await scheduleRenewal(
     expirationTime,
     accountId,
@@ -353,6 +408,16 @@ export async function renewNotification(
   console.log(`✅ Google ${channelType} renewed for account ${accountId}`);
 }
 
+/**
+ * Perform full synchronization of a single calendar.
+ * Fetches all events in ±2 year range, handles recurring event expansion.
+ * Persists sync token for incremental updates.
+ *
+ * @param {Object} calendar - Google Calendar API client
+ * @param {string} calendarId - Calendar ID to sync
+ * @param {string} accountId - CalendarAccount ID
+ * @returns {Object} { eventsProcessed, nextSyncToken }
+ */
 export async function performFullSync(calendar, calendarId, accountId) {
   const now = new Date();
   const startDate = new Date(); startDate.setFullYear(now.getFullYear() - 2);
@@ -392,12 +457,24 @@ export async function performFullSync(calendar, calendarId, accountId) {
   return { eventsProcessed: allMasterEvents.length, nextSyncToken };
 }
 
+/**
+ * Perform incremental synchronization of a calendar using sync token.
+ * Fetches only changed/deleted events since last sync.
+ * Sends real-time SSE updates to connected clients.
+ *
+ * @param {Object} calendar - Google Calendar API client
+ * @param {string} calendarId - Calendar ID to sync
+ * @param {string} syncToken - Sync token from last sync
+ * @param {string} accountId - CalendarAccount ID
+ * @param {string} userId - User ID (for SSE broadcasts)
+ * @returns {Object} { events, eventsProcessed, newSyncToken }
+ */
 export async function performIncrementalSync(calendar, calendarId, syncToken, accountId, userId = null) {
   let allChangedEvents = [];
   let pageToken = null;
   let newSyncToken = null;
-  
-  // ✅ Send sync started status
+
+  // Send sync started status via SSE
   if (userId) {
     sseService.sendSyncStatus(
       userId,
@@ -484,24 +561,37 @@ export async function performIncrementalSync(calendar, calendarId, syncToken, ac
   };
 }
 
+/**
+ * Process a recurring event master rule.
+ * Expands instances within date range and upserts to database.
+ * Sends SSE updates for deleted instances.
+ *
+ * @param {Object} calendar - Google Calendar API client
+ * @param {Object} master - Recurring event master object
+ * @param {string} calendarId - Calendar ID
+ * @param {string} accountId - CalendarAccount ID
+ * @param {Date} startDate - Start of expansion range
+ * @param {Date} endDate - End of expansion range
+ * @param {string} userId - User ID (for SSE broadcasts)
+ */
 async function processRecurringEventMaster(
-  calendar, 
-  master, 
-  calendarId, 
-  accountId, 
-  startDate, 
+  calendar,
+  master,
+  calendarId,
+  accountId,
+  startDate,
   endDate,
   userId = null
 ) {
   try {
-    const existingInstances = await Event.find({ 
-      calendarAccountId: accountId, 
-      calendarId, 
-      source: 'google', 
+    const existingInstances = await Event.find({
+      calendarAccountId: accountId,
+      calendarId,
+      source: 'google',
       $or: [
-        { externalId: master.id }, 
+        { externalId: master.id },
         { recurringEventId: master.id }
-      ] 
+      ]
     });
     
     let expandedInstances = [];
@@ -524,63 +614,72 @@ async function processRecurringEventMaster(
     const existingIds = new Set(existingInstances.map(e => e.externalId));
     const freshIds = new Set(expandedInstances.map(e => e.id));
     const instancesToDelete = [...existingIds].filter(id => !freshIds.has(id));
-    
+
     if (instancesToDelete.length > 0) {
-      // ✅ Send delete notifications before deleting
+      // Send delete notifications before deleting
       if (userId) {
-        const eventsToDelete = existingInstances.filter(e => 
+        const eventsToDelete = existingInstances.filter(e =>
           instancesToDelete.includes(e.externalId)
         );
-        
+
         for (const deletedEvent of eventsToDelete) {
           sseService.sendEventUpdate(userId, deletedEvent.toObject(), 'deleted');
         }
       }
-      
-      await Event.deleteMany({ 
-        calendarAccountId: accountId, 
-        calendarId, 
-        source: 'google', 
-        externalId: { $in: instancesToDelete } 
+
+      await Event.deleteMany({
+        calendarAccountId: accountId,
+        calendarId,
+        source: 'google',
+        externalId: { $in: instancesToDelete }
       });
     }
-    
-    // ✅ Pass userId to processBatchEvents
+
+    // Process expanded instances with SSE updates
     await processBatchEvents(expandedInstances, accountId, calendarId, userId);
   } catch (err) {
     console.error('Error processing recurring event master:', err);
-    // swallow
   }
 }
 
+/**
+ * Batch upsert events to database.
+ * Sends SSE updates for added/updated/deleted events.
+ * Handles cancelled events as deletes.
+ *
+ * @param {Array} events - Events from Google Calendar API
+ * @param {string} accountId - CalendarAccount ID
+ * @param {string} calendarId - Calendar ID
+ * @param {string} userId - User ID (for SSE broadcasts)
+ */
 async function processBatchEvents(events, accountId, calendarId, userId = null) {
   const bulkOps = [];
-  const deletedEventIds = []; // Track deleted event IDs
-  const upsertedEventIds = []; // Track upserted event IDs
-  
+  const deletedEventIds = [];
+  const upsertedEventIds = [];
+
   for (const event of events) {
     if (event.status === 'cancelled') {
-      bulkOps.push({ 
-        deleteOne: { 
-          filter: { 
-            calendarAccountId: accountId, 
-            externalId: event.id, 
-            calendarId, 
-            source: 'google' 
-          } 
-        } 
+      bulkOps.push({
+        deleteOne: {
+          filter: {
+            calendarAccountId: accountId,
+            externalId: event.id,
+            calendarId,
+            source: 'google'
+          }
+        }
       });
       deletedEventIds.push(event.id);
     } else {
       bulkOps.push({
         updateOne: {
-          filter: { 
-            calendarAccountId: accountId, 
-            externalId: event.id, 
-            calendarId, 
-            source: 'google' 
+          filter: {
+            calendarAccountId: accountId,
+            externalId: event.id,
+            calendarId,
+            source: 'google'
           },
-          update: { 
+          update: {
             $set: {
               calendarAccountId: accountId,
               calendarId,
@@ -589,23 +688,23 @@ async function processBatchEvents(events, accountId, calendarId, userId = null) 
               title: event.summary,
               description: event.description,
               location: event.location,
-              start: { 
-                dateTime: new Date(event.start?.dateTime || event.start?.date), 
-                timeZone: event.start?.timeZone || 'UTC' 
+              start: {
+                dateTime: new Date(event.start?.dateTime || event.start?.date),
+                timeZone: event.start?.timeZone || 'UTC'
               },
-              end: { 
-                dateTime: new Date(event.end?.dateTime || event.end?.date), 
-                timeZone: event.end?.timeZone || 'UTC' 
+              end: {
+                dateTime: new Date(event.end?.dateTime || event.end?.date),
+                timeZone: event.end?.timeZone || 'UTC'
               },
               isAllDay: Boolean(event.start?.date && !event.start?.dateTime),
-              organizer: { 
-                email: event.organizer?.email, 
-                name: event.organizer?.displayName 
+              organizer: {
+                email: event.organizer?.email,
+                name: event.organizer?.displayName
               },
-              attendees: event.attendees?.map(a => ({ 
-                email: a.email, 
-                name: a.displayName, 
-                responseStatus: a.responseStatus 
+              attendees: event.attendees?.map(a => ({
+                email: a.email,
+                name: a.displayName,
+                responseStatus: a.responseStatus
               })),
               isRecurring: !!event.recurringEventId,
               recurringEventId: event.recurringEventId,
@@ -613,7 +712,7 @@ async function processBatchEvents(events, accountId, calendarId, userId = null) 
               htmlLink: event.htmlLink,
               raw: event,
               updatedAt: new Date(),
-            } 
+            }
           },
           upsert: true
         }
@@ -621,8 +720,8 @@ async function processBatchEvents(events, accountId, calendarId, userId = null) 
       upsertedEventIds.push(event.id);
     }
   }
-  
-  // ✅ Fetch events to delete BEFORE bulk write (for SSE notifications)
+
+  // Fetch events to delete BEFORE bulk write (for SSE notifications)
   let eventsToDelete = [];
   if (userId && deletedEventIds.length > 0) {
     eventsToDelete = await Event.find({
@@ -632,19 +731,19 @@ async function processBatchEvents(events, accountId, calendarId, userId = null) 
       externalId: { $in: deletedEventIds }
     });
   }
-  
+
   // Execute bulk operations
   if (bulkOps.length > 0) {
     await Event.bulkWrite(bulkOps, { ordered: false });
   }
-  
-  // ✅ Send SSE notifications after bulk write
+
+  // Send SSE notifications after bulk write
   if (userId) {
     // Send delete notifications
     for (const deletedEvent of eventsToDelete) {
       sseService.sendEventUpdate(userId, deletedEvent.toObject(), 'deleted');
     }
-    
+
     // Fetch and send notifications for upserted events
     if (upsertedEventIds.length > 0) {
       const upsertedEvents = await Event.find({
@@ -653,16 +752,23 @@ async function processBatchEvents(events, accountId, calendarId, userId = null) 
         source: 'google',
         externalId: { $in: upsertedEventIds }
       });
-      
+
       for (const upsertedEvent of upsertedEvents) {
-        // Use 'updated' action for both new and updated events
-        // The frontend will handle both cases the same way
         sseService.sendEventUpdate(userId, upsertedEvent.toObject(), 'updated');
       }
     }
   }
 }
 
+/**
+ * Perform incremental or full sync of user's Google calendar list.
+ * Detects added/removed calendars and syncs calendar metadata.
+ * Removes events for deleted calendars.
+ * Uses sync token for efficiency, falls back to full list if token expired.
+ *
+ * @param {Object} account - CalendarAccount object
+ * @throws {Error} If API call fails
+ */
 export async function updateGoogleCalendarList(account) {
   const authClient = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_REDIRECT_URI);
   if (account.expiresAt && account.expiresAt < new Date()) {
