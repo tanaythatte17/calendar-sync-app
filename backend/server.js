@@ -93,6 +93,7 @@ app.listen(PORT, async () => {
     
     logger.info(`Server running on port ${PORT}`);
   } catch (error) {
+    //Error
     logger.error('Failed to start server:', error);
     process.exit(1);
   }
