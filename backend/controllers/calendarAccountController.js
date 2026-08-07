@@ -1,4 +1,5 @@
 import { deleteAccountAndCleanup } from "../services/calendarAccountService.js";
+import logger from "../utils/logger.js";
 
 /**
  * Deletes a calendar account:
@@ -18,7 +19,7 @@ export async function deleteCalendarAccount(req, res) {
     return res.status(200).json(result);
 
   } catch (err) {
-    console.error("❌ Error deleting calendar account:", err);
+    logger.error("❌ Error deleting calendar account:", err);
     return res.status(500).json({ message: "Internal server error", error: err.message });
   }
 }

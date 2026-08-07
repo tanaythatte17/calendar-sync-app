@@ -5,6 +5,7 @@ import { refreshCalendarAccessToken } from '../utils/refreshToken.js';
 import { updateMicrosoftCalendarList, performMicrosoftIncrementalSync, performMicrosoftFullSync } from '../services/microsoftService.js';
 import sseService from '../services/sseService.js';
 import dotenv from 'dotenv';
+import logger from "../utils/logger.js";
 
 dotenv.config();
 
@@ -22,7 +23,7 @@ export const microsoftEventsWorker = new Worker(
   async (job) => {
     const { accountId, calendarId } = job.data;
 
-    console.log(`Processing Microsoft webhook job for calendar: ${calendarId}`);
+    logger.info(`Processing Microsoft webhook job for calendar: ${calendarId}`);
 
     // Fetch account
     const account = await calendarAccount.findById(accountId);
@@ -107,7 +108,7 @@ export const microsoftEventsWorker = new Worker(
         { calendarId, eventsProcessed, provider: 'microsoft' }
       );
 
-      console.log(`✅ Synced ${eventsProcessed} Microsoft events for calendar: ${calendarId}`);
+      logger.info(`✅ Synced ${eventsProcessed} Microsoft events for calendar: ${calendarId}`);
 
       return {
         success: true,
@@ -117,7 +118,7 @@ export const microsoftEventsWorker = new Worker(
     } catch (err) {
       // If deltaLink expired (HTTP 410), fallback to full sync
       if (err?.response?.status === 410) {
-        console.log('Delta link expired, performing full sync...');
+        logger.info('Delta link expired, performing full sync...');
         const { eventsProcessed: fullEvents, newDeltaLink } = await performMicrosoftFullSync(
           calendarId,
           headers,
@@ -156,7 +157,7 @@ export const microsoftCalendarListWorker = new Worker(
   async (job) => {
     const { accountId } = job.data;
 
-    console.log(`Processing Microsoft calendar list webhook job for account: ${accountId}`);
+    logger.info(`Processing Microsoft calendar list webhook job for account: ${accountId}`);
 
     const account = await calendarAccount.findById(accountId);
     if (!account) {
@@ -191,7 +192,7 @@ export const microsoftCalendarListWorker = new Worker(
       'updated'
     );
 
-    console.log(`✅ Calendar list synced for Microsoft account: ${accountId}`);
+    logger.info(`✅ Calendar list synced for Microsoft account: ${accountId}`);
 
     return {
       success: true,
@@ -206,17 +207,17 @@ export const microsoftCalendarListWorker = new Worker(
 
 // Event listeners for monitoring
 microsoftEventsWorker.on('completed', (job) => {
-  console.log(`Microsoft events job ${job.id} completed successfully`);
+  logger.info(`Microsoft events job ${job.id} completed successfully`);
 });
 
 microsoftEventsWorker.on('failed', (job, err) => {
-  console.error(`Microsoft events job ${job.id} failed with error:`, err.message);
+  logger.error(`Microsoft events job ${job.id} failed with error:`, err.message);
 });
 
 microsoftCalendarListWorker.on('completed', (job) => {
-  console.log(`Microsoft calendar list job ${job.id} completed successfully`);
+  logger.info(`Microsoft calendar list job ${job.id} completed successfully`);
 });
 
 microsoftCalendarListWorker.on('failed', (job, err) => {
-  console.error(`Microsoft calendar list job ${job.id} failed with error:`, err.message);
+  logger.error(`Microsoft calendar list job ${job.id} failed with error:`, err.message);
 });

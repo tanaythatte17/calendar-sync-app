@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import logger from "./logger.js";
 
 // Initialize Nodemailer transporter for Zoho
 const transporter = nodemailer.createTransport({
@@ -17,9 +18,9 @@ const transporter = nodemailer.createTransport({
 // Verify transporter configuration
 transporter.verify((error, success) => {
   if (error) {
-    console.log('Email configuration error:', error);
+    logger.info('Email configuration error:', error);
   } else {
-    console.log('Email server is ready to send messages');
+    logger.info('Email server is ready to send messages');
   }
 });
 
@@ -160,15 +161,15 @@ export const sendOTPEmail = async (email, otp, userName = 'User') => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ OTP email sent successfully to:', email);
-    console.log('Message ID:', info.messageId);
+    logger.info('✅ OTP email sent successfully to:', email);
+    logger.info('Message ID:', info.messageId);
     
     return { 
       success: true, 
       messageId: info.messageId 
     };
   } catch (error) {
-    console.error('❌ Error sending OTP email:', error);
+    logger.error('❌ Error sending OTP email:', error);
     throw new Error('Failed to send OTP email: ' + error.message);
   }
 };
@@ -209,10 +210,10 @@ export const sendWelcomeEmail = async (email, userName) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Welcome email sent successfully');
+    logger.info('✅ Welcome email sent successfully');
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error('❌ Error sending welcome email:', error);
+    logger.error('❌ Error sending welcome email:', error);
     throw new Error('Failed to send welcome email');
   }
 };

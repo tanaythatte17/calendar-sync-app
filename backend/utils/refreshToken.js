@@ -1,5 +1,6 @@
 import calendarAccount from "../models/calendarAccountModel.js";
 import axios from "axios";
+import logger from "./logger.js";
 
 export const refreshCalendarAccessToken = async (
   accountId,
@@ -48,7 +49,7 @@ export const refreshCalendarAccessToken = async (
 
     return updatedAccount;
   } catch (err) {
-    console.error(`Token refresh failed for account ${accountId}:`, err.message);
+    logger.error(`Token refresh failed for account ${accountId}:`, err.message);
     // optionally clear invalid accessToken
     await calendarAccount.findByIdAndUpdate(accountId, {
       $unset: { accessToken: "" },

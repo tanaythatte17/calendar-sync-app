@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
+import logger from "../utils/logger.js";
 
 /**
  * Middleware to verify JWT token and authenticate requests.
@@ -40,7 +41,7 @@ const protectRoute = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
-    console.log(error.message);
+    logger.info(error.message);
     res.status(500).json({ error: "Error in Middleware" });
   }
 };

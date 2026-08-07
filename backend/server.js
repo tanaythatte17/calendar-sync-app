@@ -18,6 +18,7 @@ import { redisClient } from './config/redis.js';
 // Import workers to start them
 import { googleEventsWorker, googleCalendarListWorker } from './workers/googleWebhookWorker.js';
 import { microsoftEventsWorker, microsoftCalendarListWorker } from "./workers/microsoftWebhookWorker.js";
+import logger from "./utils/logger.js";
 
 dotenv.config();
 
@@ -46,7 +47,7 @@ const PORT = process.env.PORT || 5000;
 
 // Graceful shutdown handler
 const gracefulShutdown = async () => {
-  console.log('Shutting down gracefully...');
+  logger.info('Shutting down gracefully...');
   
   try {
     // Close BullMQ workers
@@ -54,19 +55,19 @@ const gracefulShutdown = async () => {
     await googleCalendarListWorker.close();
     await microsoftEventsWorker.close();
     await microsoftCalendarListWorker.close();
-    console.log('BullMQ workers closed');
+    logger.info('BullMQ workers closed');
     
     // Close Redis connection
     await redisClient.quit();
-    console.log('Redis connection closed');
+    logger.info('Redis connection closed');
     
     // Stop Agenda
     await agenda.stop();
-    console.log('Agenda stopped');
+    logger.info('Agenda stopped');
     
     process.exit(0);
   } catch (error) {
-    console.error('Error during shutdown:', error);
+    logger.error('Error during shutdown:', error);
     process.exit(1);
   }
 };
@@ -85,14 +86,14 @@ app.listen(PORT, async () => {
     
     // Redis connection is already established by importing the client
     // Just verify it's connected
-    console.log('Redis status:', redisClient.status);
+    logger.info('Redis status:', redisClient.status);
     
     // Workers are already running by importing them
-    console.log('✅ BullMQ workers initialized and running');
+    logger.info('✅ BullMQ workers initialized and running');
     
-    console.log(`Server running on port ${PORT}`);
+    logger.info(`Server running on port ${PORT}`);
   } catch (error) {
-    console.error('Failed to start server:', error);
+    logger.error('Failed to start server:', error);
     process.exit(1);
   }
 });

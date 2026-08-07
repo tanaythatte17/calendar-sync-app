@@ -1,3 +1,4 @@
+import logger from "../utils/logger.js";
 /**
  * Server-Sent Events (SSE) broadcast service.
  * Manages client connections and broadcasts real-time updates.
@@ -77,7 +78,7 @@ class SSEService {
    */
   sendToUser(userId, data) {
     if (!this.clients.has(userId)) {
-      console.log(`No clients found for user ${userId}`);
+      logger.info(`No clients found for user ${userId}`);
       return;
     }
 
@@ -88,7 +89,7 @@ class SSEService {
       try {
         client.response.write(`data: ${JSON.stringify(data)}\n\n`);
       } catch (error) {
-        console.log(`Client ${client.id} disconnected (write error)`);
+        logger.info(`Client ${client.id} disconnected (write error)`);
         deadClients.add(client);
       }
     }

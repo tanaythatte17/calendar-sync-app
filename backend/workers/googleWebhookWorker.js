@@ -5,6 +5,7 @@ import CalendarAccount from '../models/calendarAccountModel.js';
 import { performIncrementalSync, updateGoogleCalendarList } from '../services/googleService.js';
 import sseService from '../services/sseService.js';
 import dotenv from 'dotenv';
+import logger from "../utils/logger.js";
 
 dotenv.config();
 
@@ -14,7 +15,7 @@ export const googleEventsWorker = new Worker(
   async (job) => {
     const { calendarId, accountId } = job.data;
 
-    console.log(`Processing webhook job for calendar: ${calendarId}`);
+    logger.info(`Processing webhook job for calendar: ${calendarId}`);
 
     // 🔐 1. Fetch calendar account and refresh token
     const calendarAccount = await CalendarAccount.findById(accountId);
@@ -22,7 +23,7 @@ export const googleEventsWorker = new Worker(
       throw new Error('Calendar account or refresh token not found');
     }
 
-    console.log('Calendar account found:', calendarAccount.email);
+    logger.info('Calendar account found:', calendarAccount.email);
     
     const calendarInfo = calendarAccount.calendarList.find(
       (c) => c.calendarId === calendarId
@@ -61,7 +62,7 @@ export const googleEventsWorker = new Worker(
     calendarInfo.syncToken = newSyncToken;
     await calendarAccount.save();
 
-    console.log(`✅ Synced ${eventsProcessed} events for calendarId: ${calendarId}`);
+    logger.info(`✅ Synced ${eventsProcessed} events for calendarId: ${calendarId}`);
 
     return {
       success: true,
@@ -85,7 +86,7 @@ export const googleCalendarListWorker = new Worker(
   async (job) => {
     const { accountId } = job.data;
 
-    console.log(`Processing calendar list webhook job for account: ${accountId}`);
+    logger.info(`Processing calendar list webhook job for account: ${accountId}`);
 
     const calendarAccount = await CalendarAccount.findById(accountId);
     if (!calendarAccount) {
@@ -102,7 +103,7 @@ export const googleCalendarListWorker = new Worker(
       'updated'
     );
 
-    console.log(`✅ Calendar list synced for account: ${accountId}`);
+    logger.info(`✅ Calendar list synced for account: ${accountId}`);
 
     return {
       success: true,
@@ -121,17 +122,17 @@ export const googleCalendarListWorker = new Worker(
 
 // Event listeners for monitoring
 googleEventsWorker.on('completed', (job) => {
-  console.log(`Job ${job.id} completed successfully`);
+  logger.info(`Job ${job.id} completed successfully`);
 });
 
 googleEventsWorker.on('failed', (job, err) => {
-  console.error(`Job ${job.id} failed with error:`, err.message);
+  logger.error(`Job ${job.id} failed with error:`, err.message);
 });
 
 googleCalendarListWorker.on('completed', (job) => {
-  console.log(`Calendar list job ${job.id} completed successfully`);
+  logger.info(`Calendar list job ${job.id} completed successfully`);
 });
 
 googleCalendarListWorker.on('failed', (job, err) => {
-  console.error(`Calendar list job ${job.id} failed with error:`, err.message);
+  logger.error(`Calendar list job ${job.id} failed with error:`, err.message);
 });

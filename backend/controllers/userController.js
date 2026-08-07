@@ -1,11 +1,12 @@
 import { getCalendarAccounts, getUserEvents, getProfile, updateTimezone, getTimezone } from "../services/userService.js";
+import logger from "../utils/logger.js";
 
 export const getCalendarAccountsHandler = async (req, res) => {
   try {
     const accounts = await getCalendarAccounts(req.user?._id);
     res.json(accounts);
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     res.status(500).send("Could not fetch calendar accounts");
   }
 };
@@ -15,7 +16,7 @@ export const getUserEventsHandler = async (req, res) => {
     const events = await getUserEvents(req.user?._id, req.query || {});
     res.json(events);
   } catch (err) {
-    console.error('Error fetching user events:', err);
+    logger.error('Error fetching user events:', err);
     res.status(500).send("Could not fetch user events");
   }
 };

@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import logger from "../utils/logger.js";
 
 // Create Redis client
 export const redisClient = new Redis({
@@ -25,23 +26,23 @@ export const redisClient = new Redis({
 
 // Connection event handlers
 redisClient.on('connect', () => {
-  console.log('✅ Redis: Connecting...');
+  logger.info('✅ Redis: Connecting...');
 });
 
 redisClient.on('ready', () => {
-  console.log('✅ Redis: Connected and ready');
+  logger.info('✅ Redis: Connected and ready');
 });
 
 redisClient.on('error', (err) => {
-  console.error('❌ Redis error:', err.message);
+  logger.error('❌ Redis error:', err.message);
 });
 
 redisClient.on('close', () => {
-  console.log('⚠️  Redis: Connection closed');
+  logger.info('⚠️  Redis: Connection closed');
 });
 
 redisClient.on('reconnecting', () => {
-  console.log('🔄 Redis: Reconnecting...');
+  logger.info('🔄 Redis: Reconnecting...');
 });
 
 // Helper functions for common operations
@@ -54,7 +55,7 @@ export const redisHelpers = {
       const data = await redisClient.get(key);
       return data ? JSON.parse(data) : null;
     } catch (error) {
-      console.error(`Redis getJSON error for key ${key}:`, error);
+      logger.error(`Redis getJSON error for key ${key}:`, error);
       return null;
     }
   },
@@ -72,7 +73,7 @@ export const redisHelpers = {
       }
       return true;
     } catch (error) {
-      console.error(`Redis setJSON error for key ${key}:`, error);
+      logger.error(`Redis setJSON error for key ${key}:`, error);
       return false;
     }
   },
@@ -85,7 +86,7 @@ export const redisHelpers = {
       await redisClient.del(...keys);
       return true;
     } catch (error) {
-      console.error(`Redis del error:`, error);
+      logger.error(`Redis del error:`, error);
       return false;
     }
   },
@@ -98,7 +99,7 @@ export const redisHelpers = {
       const result = await redisClient.exists(key);
       return result === 1;
     } catch (error) {
-      console.error(`Redis exists error for key ${key}:`, error);
+      logger.error(`Redis exists error for key ${key}:`, error);
       return false;
     }
   },
@@ -111,7 +112,7 @@ export const redisHelpers = {
       await redisClient.setex(key, ttlSeconds, value);
       return true;
     } catch (error) {
-      console.error(`Redis setWithTTL error for key ${key}:`, error);
+      logger.error(`Redis setWithTTL error for key ${key}:`, error);
       return false;
     }
   },
@@ -123,7 +124,7 @@ export const redisHelpers = {
     try {
       return await redisClient.ttl(key);
     } catch (error) {
-      console.error(`Redis getTTL error for key ${key}:`, error);
+      logger.error(`Redis getTTL error for key ${key}:`, error);
       return -1;
     }
   },
@@ -139,7 +140,7 @@ export const redisHelpers = {
       }
       return keys.length;
     } catch (error) {
-      console.error(`Redis deletePattern error for pattern ${pattern}:`, error);
+      logger.error(`Redis deletePattern error for pattern ${pattern}:`, error);
       return 0;
     }
   },
@@ -152,7 +153,7 @@ export const redisHelpers = {
       const result = await redisClient.ping();
       return result === 'PONG';
     } catch (error) {
-      console.error('Redis ping error:', error);
+      logger.error('Redis ping error:', error);
       return false;
     }
   },

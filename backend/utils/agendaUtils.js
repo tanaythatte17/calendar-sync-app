@@ -2,6 +2,7 @@ import Agenda from "agenda";
 import { renewNotification } from "../services/googleService.js";
 import { renewMicrosoftNotification } from "../services/microsoftService.js";
 import dotenv from "dotenv";
+import logger from "./logger.js";
 
 dotenv.config();
 
@@ -21,13 +22,13 @@ const agenda = new Agenda({
  */
 agenda.define("renewGoogleNotification", async (job) => {
   const { accountId, channelType, calendarId, channelId, resourceId } = job.attrs.data;
-  console.log(`🔄 Renewing Google ${channelType} notification for account ${accountId}...`);
+  logger.info(`🔄 Renewing Google ${channelType} notification for account ${accountId}...`);
 
   try {
     await renewNotification(accountId, channelType, calendarId, channelId, resourceId);
-    console.log(`✅ Successfully renewed Google ${channelType} notification for account ${accountId}`);
+    logger.info(`✅ Successfully renewed Google ${channelType} notification for account ${accountId}`);
   } catch (error) {
-    console.error(`❌ Failed to renew Google ${channelType} notification for account ${accountId}:`, error.message);
+    logger.error(`❌ Failed to renew Google ${channelType} notification for account ${accountId}:`, error.message);
     throw error;
   }
 });
@@ -39,13 +40,13 @@ agenda.define("renewGoogleNotification", async (job) => {
  */
 agenda.define("renewMicrosoftNotification", async (job) => {
   const { accountId, subscriptionType, calendarId, subscriptionId } = job.attrs.data;
-  console.log(`🔄 Renewing Microsoft ${subscriptionType} subscription for account ${accountId}...`);
+  logger.info(`🔄 Renewing Microsoft ${subscriptionType} subscription for account ${accountId}...`);
 
   try {
     await renewMicrosoftNotification(accountId, subscriptionType, calendarId, subscriptionId);
-    console.log(`✅ Successfully renewed Microsoft ${subscriptionType} subscription for account ${accountId}`);
+    logger.info(`✅ Successfully renewed Microsoft ${subscriptionType} subscription for account ${accountId}`);
   } catch (error) {
-    console.error(`❌ Failed to renew Microsoft ${subscriptionType} subscription for account ${accountId}:`, error.message);
+    logger.error(`❌ Failed to renew Microsoft ${subscriptionType} subscription for account ${accountId}:`, error.message);
     throw error;
   }
 });
@@ -73,7 +74,7 @@ export async function scheduleRenewal(expirationTime, accountId, channelType, ca
     resourceId
   });
 
-  console.log(`📅 Google ${channelType} renewal job scheduled for ${renewDate} (Account: ${accountId})`);
+  logger.info(`📅 Google ${channelType} renewal job scheduled for ${renewDate} (Account: ${accountId})`);
 }
 
 /**
@@ -97,7 +98,7 @@ export async function scheduleMicrosoftRenewal(expirationTime, accountId, subscr
     subscriptionId
   });
 
-  console.log(`📅 Microsoft ${subscriptionType} renewal job scheduled for ${renewDate} (Account: ${accountId})`);
+  logger.info(`📅 Microsoft ${subscriptionType} renewal job scheduled for ${renewDate} (Account: ${accountId})`);
 }
 
 /**
@@ -118,7 +119,7 @@ export async function cleanupExpiredJobs() {
     await job.remove();
   }
 
-  console.log(`🧹 Cleaned up ${result.length} expired notification renewal jobs`);
+  logger.info(`🧹 Cleaned up ${result.length} expired notification renewal jobs`);
 }
 
 export default agenda;

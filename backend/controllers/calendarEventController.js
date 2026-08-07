@@ -1,4 +1,5 @@
 import { createEvent, updateEvent, deleteEvent, listUserCalendars } from '../services/calendarEventService.js';
+import logger from "../utils/logger.js";
 
 // POST /api/calendar/events - Create event in user's calendar
 export const createCalendarEvent = async (req, res) => {
@@ -14,7 +15,7 @@ export const createCalendarEvent = async (req, res) => {
 // Helper function to refresh token if needed
 async function refreshTokenIfNeeded(account, provider) {
   if (account.expiresAt && account.expiresAt < new Date()) {
-    console.log(`${provider} token expired, refreshing...`);
+    logger.info(`${provider} token expired, refreshing...`);
     
     const tokenUrl = provider === 'google' 
       ? 'https://oauth2.googleapis.com/token'
@@ -113,7 +114,7 @@ async function createGoogleEvent(account, eventData) {
 
 // Create event in Microsoft Calendar
 async function createMicrosoftEvent(account, eventData) {
-  console.log('Creating Microsoft event with data:', eventData);
+  logger.info('Creating Microsoft event with data:', eventData);
   const {
     title,
     description,
@@ -197,16 +198,16 @@ async function createMicrosoftEvent(account, eventData) {
     microsoftEvent.reminderMinutesBeforeStart = reminders[0].minutes;
   }
 
-  console.log('Prepared Microsoft event object:', JSON.stringify(microsoftEvent, null, 2));
+  logger.info('Prepared Microsoft event object:', JSON.stringify(microsoftEvent, null, 2));
 
   try {
     // Create the event - keep same endpoint as regular events work fine
     const url = `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events`;
-    console.log('Making request to URL:', url);
+    logger.info('Making request to URL:', url);
 
     const response = await axios.post(url, microsoftEvent, { headers });
 
-    console.log('Microsoft event created successfully:', response.data.id);
+    logger.info('Microsoft event created successfully:', response.data.id);
     return {
       id: response.data.id,
       htmlLink: response.data.webLink,
@@ -214,12 +215,12 @@ async function createMicrosoftEvent(account, eventData) {
     };
 
   } catch (error) {
-    console.error('Microsoft Graph API Error Details:');
-    console.error('Status:', error.response?.status);
-    console.error('Status Text:', error.response?.statusText);
-    console.error('Error Data:', JSON.stringify(error.response?.data, null, 2));
-    console.error('Request Headers:', headers);
-    console.error('Request Body:', JSON.stringify(microsoftEvent, null, 2));
+    logger.error('Microsoft Graph API Error Details:');
+    logger.error('Status:', error.response?.status);
+    logger.error('Status Text:', error.response?.statusText);
+    logger.error('Error Data:', JSON.stringify(error.response?.data, null, 2));
+    logger.error('Request Headers:', headers);
+    logger.error('Request Body:', JSON.stringify(microsoftEvent, null, 2));
     
     // Re-throw with more context
     throw new Error(`Microsoft Graph API Error: ${error.response?.status} - ${JSON.stringify(error.response?.data)}`);
@@ -253,8 +254,8 @@ function formatGoogleRecurrence(recurrence) {
 
 // Helper function to format Microsoft recurrence rule
 function formatMicrosoftRecurrence(recurrence, eventStartDateTime) {
-  console.log('Recurrence is ', recurrence);
-  console.log('Event start date time is ', eventStartDateTime);
+  logger.info('Recurrence is ', recurrence);
+  logger.info('Event start date time is ', eventStartDateTime);
   const { frequency, interval = 1, count, until, byDay } = recurrence;
 
   const pattern = {

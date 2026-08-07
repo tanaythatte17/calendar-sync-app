@@ -1,5 +1,6 @@
 import sseService from "../services/sseService.js";
 import protectRoute from "../middleware/protectRoute.js";
+import logger from "../utils/logger.js";
 
 /**
  * Establish Server-Sent Events (SSE) connection for real-time updates.
@@ -13,7 +14,7 @@ import protectRoute from "../middleware/protectRoute.js";
  */
 export const connectSSE = (req, res) => {
   try {
-    console.log('Inside SSE connection endpoint');
+    logger.info('Inside SSE connection endpoint');
     const userId = req.user._id.toString();
 
     // Set SSE headers
@@ -45,11 +46,11 @@ export const connectSSE = (req, res) => {
     });
 
     req.on('error', (err) => {
-      console.error(`SSE connection error for client ${clientId}:`, err);
+      logger.error(`SSE connection error for client ${clientId}:`, err);
       sseService.removeClient(userId, clientId);
     });
   } catch (error) {
-    console.error('SSE connection error:', error);
+    logger.error('SSE connection error:', error);
     res.status(500).json({ error: 'Failed to establish SSE connection' });
   }
 };
@@ -76,7 +77,7 @@ export const getConnectionStatus = (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error getting connection status:', error);
+    logger.error('Error getting connection status:', error);
     res.status(500).json({ error: 'Failed to get connection status' });
   }
 };

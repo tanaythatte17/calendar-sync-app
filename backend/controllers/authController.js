@@ -1,3 +1,4 @@
+import logger from "../utils/logger.js";
 import { 
   signup as signupService, 
   login as loginService, 
@@ -35,7 +36,7 @@ export const signup = async (req, res) => {
     const result = await signupService(res, { name, email, password });
     return res.status(201).json(result);
   } catch (error) {
-    console.log(error.message);
+    logger.info(error.message);
     const status = error.statusCode || 400;
     return res.status(status).json({ error: error.message || "Internal error in creating user" });
   }
@@ -55,7 +56,7 @@ export const login = async (req, res) => {
     const result = await loginService(res, { email, password });
     return res.status(200).json(result);
   } catch (error) {
-    console.log(error.message);
+    logger.info(error.message);
     const status = error.statusCode || 400;
     res.status(status).json({ error: error.message || "Internal error" });
   }
@@ -72,7 +73,7 @@ export const logout = (req, res) => {
     const result = logoutService(res);
     res.status(200).json(result);
   } catch (error) {
-    console.log(error.message);
+    logger.info(error.message);
     res.status(400).json({ error: "Internal error" });
   }
 }
@@ -142,7 +143,7 @@ export const getGoogleAuthURL = async (req, res) => {
     const result = await getGoogleAuthURLService();
     res.status(200).json(result);
   } catch (error) {
-    console.error('Error generating Google auth URL:', error);
+    logger.error('Error generating Google auth URL:', error);
     res.status(500).json({ error: 'Failed to generate authorization URL' });
   }
 };
@@ -168,7 +169,7 @@ export const handleGoogleCallback = async (req, res) => {
     const result = await handleGoogleCallbackService(code, res);
     res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
   } catch (error) {
-    console.error('Google callback error:', error);
+    logger.error('Google callback error:', error);
     res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
   }
 };
@@ -186,7 +187,7 @@ export const getMicrosoftAuthURL = async (req, res) => {
     const result = await getMicrosoftAuthURLService();
     res.status(200).json(result);
   } catch (error) {
-    console.error('Error generating Microsoft auth URL:', error);
+    logger.error('Error generating Microsoft auth URL:', error);
     res.status(500).json({ error: 'Failed to generate authorization URL' });
   }
 };
@@ -212,7 +213,7 @@ export const handleMicrosoftCallback = async (req, res) => {
     const result = await handleMicrosoftCallbackService(code, res);
     res.redirect(`${process.env.FRONTEND_URL}/auth/success`);
   } catch (error) {
-    console.error('Microsoft callback error:', error);
+    logger.error('Microsoft callback error:', error);
     res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
   }
 };

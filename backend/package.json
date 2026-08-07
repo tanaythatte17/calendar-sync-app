@@ -1,5 +1,5 @@
 {
-  "name": "backend_old",
+  "name": "calendar-sync-backend",
   "version": "1.0.0",
   "main": "server.js",
   "type": "module",
@@ -12,10 +12,17 @@
     "start": "node server.js",
     "dev": "nodemon server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": [
+    "calendar-sync",
+    "google-calendar",
+    "microsoft-outlook",
+    "oauth",
+    "sse",
+    "bullmq"
+  ],
+  "author": "Tanay Thatte",
+  "license": "MIT",
+  "description": "Node.js/Express backend that synchronizes Google Calendar and Microsoft Outlook events in real time via OAuth 2.0, webhooks, and Server-Sent Events.",
   "dependencies": {
     "agenda": "^5.0.0",
     "axios": "^1.10.0",
@@ -27,15 +34,12 @@
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "express-rate-limit": "^8.2.1",
-    "google": "^2.1.0",
     "googleapis": "^150.0.1",
     "ioredis": "^5.8.2",
     "jsonwebtoken": "^9.0.2",
-    "microsoft": "^0.0.0",
     "moment-timezone": "^0.6.0",
     "mongoose": "^8.16.0",
     "nodemailer": "^7.0.11",
-    "querystring": "^0.2.1",
     "uuid": "^11.1.0",
     "windows-iana": "^5.1.0"
   },

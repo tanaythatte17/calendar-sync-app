@@ -1,4 +1,5 @@
 import { redisHelpers } from "../config/redis.js";
+import logger from "../utils/logger.js";
 
 // Cache TTL in seconds
 const EVENTS_CACHE_TTL = 300; // 5 minutes
@@ -24,7 +25,7 @@ export const getCacheKey = {
 export async function invalidateUserEventsCache(userId) {
   const cacheKey = getCacheKey.events(userId);
   await redisHelpers.del(cacheKey);
-  console.log(`🗑️  Invalidated events cache for user ${userId}`);
+  logger.info(`🗑️  Invalidated events cache for user ${userId}`);
 }
 
 /**
@@ -33,7 +34,7 @@ export async function invalidateUserEventsCache(userId) {
 export async function invalidateUserAccountsCache(userId) {
   const cacheKey = getCacheKey.accounts(userId);
   await redisHelpers.del(cacheKey);
-  console.log(`🗑️  Invalidated accounts cache for user ${userId}`);
+  logger.info(`🗑️  Invalidated accounts cache for user ${userId}`);
 }
 
 /**
@@ -42,7 +43,7 @@ export async function invalidateUserAccountsCache(userId) {
 export async function invalidateAllUserCaches(userId) {
   await invalidateUserEventsCache(userId);
   await invalidateUserAccountsCache(userId);
-  console.log(`🗑️  Invalidated all caches for user ${userId}`);
+  logger.info(`🗑️  Invalidated all caches for user ${userId}`);
 }
 
 // =====================
@@ -58,7 +59,7 @@ export async function updateCachedEvent(userId, eventData, operation) {
   const cached = await redisHelpers.getJSON(cacheKey);
   
   if (!cached) {
-    console.log(`⏭️  No cache to update for user ${userId}`);
+    logger.info(`⏭️  No cache to update for user ${userId}`);
     return; // No cache exists, skip update
   }
 
@@ -71,7 +72,7 @@ export async function updateCachedEvent(userId, eventData, operation) {
       events.sort((a, b) => 
         new Date(a.start.dateTime) - new Date(b.start.dateTime)
       );
-      console.log(`➕ Added event to cache for user ${userId}`);
+      logger.info(`➕ Added event to cache for user ${userId}`);
       break;
 
     case 'updated':
@@ -84,14 +85,14 @@ export async function updateCachedEvent(userId, eventData, operation) {
       
       if (updateIndex !== -1) {
         events[updateIndex] = eventData;
-        console.log(`✏️  Updated event in cache for user ${userId}`);
+        logger.info(`✏️  Updated event in cache for user ${userId}`);
       } else {
         // Event not in cache range, add it
         events.push(eventData);
         events.sort((a, b) => 
           new Date(a.start.dateTime) - new Date(b.start.dateTime)
         );
-        console.log(`➕ Added new event to cache for user ${userId}`);
+        logger.info(`➕ Added new event to cache for user ${userId}`);
       }
       break;
 
@@ -103,11 +104,11 @@ export async function updateCachedEvent(userId, eventData, operation) {
         e.googleEventId !== eventData.googleEventId &&
         e.outlookEventId !== eventData.outlookEventId
       );
-      console.log(`🗑️  Deleted event from cache for user ${userId} (${beforeLength} -> ${events.length})`);
+      logger.info(`🗑️  Deleted event from cache for user ${userId} (${beforeLength} -> ${events.length})`);
       break;
 
     default:
-      console.log(`❓ Unknown operation ${operation}, invalidating cache`);
+      logger.info(`❓ Unknown operation ${operation}, invalidating cache`);
       await invalidateUserEventsCache(userId);
       return;
   }
@@ -142,7 +143,7 @@ export async function startSync(userId, accountId) {
     lastSyncEnd: null,
   };
   await redisHelpers.setJSON(key, data);
-  console.log(`🔄 Started sync for user ${userId}, account ${accountId}`);
+  logger.info(`🔄 Started sync for user ${userId}, account ${accountId}`);
 }
 
 /**
@@ -157,7 +158,7 @@ export async function endSync(userId, accountId) {
   data.lastSyncEnd = Date.now();
   
   await redisHelpers.setJSON(key, data, SYNC_STATUS_TTL);
-  console.log(`✅ Ended sync for user ${userId}, account ${accountId}`);
+  logger.info(`✅ Ended sync for user ${userId}, account ${accountId}`);
 }
 
 /**
@@ -181,7 +182,7 @@ export async function shouldDebounceWebhook(calendarId) {
   const exists = await redisHelpers.exists(key);
   
   if (exists) {
-    console.log(`⏸️  Debounced webhook for calendar ${calendarId}`);
+    logger.info(`⏸️  Debounced webhook for calendar ${calendarId}`);
     return true; // Already processing recent webhook
   }
   
@@ -210,7 +211,7 @@ export async function warmUserCache(userId, accounts, events) {
     EVENTS_CACHE_TTL
   );
   
-  console.log(`🔥 Warmed cache for user ${userId}`);
+  logger.info(`🔥 Warmed cache for user ${userId}`);
 }
 
 // =====================
@@ -223,7 +224,7 @@ export async function warmUserCache(userId, accounts, events) {
 export async function invalidateMultipleUserCaches(userIds) {
   const promises = userIds.map(userId => invalidateAllUserCaches(userId));
   await Promise.all(promises);
-  console.log(`🗑️  Invalidated caches for ${userIds.length} users`);
+  logger.info(`🗑️  Invalidated caches for ${userIds.length} users`);
 }
 
 /**
@@ -232,7 +233,7 @@ export async function invalidateMultipleUserCaches(userIds) {
 export async function clearAllCalendarCaches() {
   const eventKeys = await redisHelpers.deletePattern('calendar:*:events');
   const accountKeys = await redisHelpers.deletePattern('user:*:calendarAccounts');
-  console.log(`🗑️  Cleared ${eventKeys + accountKeys} cache keys`);
+  logger.info(`🗑️  Cleared ${eventKeys + accountKeys} cache keys`);
   return { eventsCleared: eventKeys, accountsCleared: accountKeys };
 }
 

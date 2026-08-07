@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 import { refreshCalendarAccessToken } from "../utils/refreshToken.js";
 import { scheduleMicrosoftRenewal } from '../utils/agendaUtils.js';
 import sseService from "../services/sseService.js";
+import logger from "../utils/logger.js";
 
 dotenv.config();
 
@@ -65,7 +66,7 @@ export async function callback(query, cookies, clearCookie, redirect) {
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
   } catch(err){
-    console.error('Error fetching tokens', err.response?.data || err.message);
+    logger.error('Error fetching tokens', err.response?.data || err.message);
   }
   const tokens = tokenRes.data;
   const userRes = await axios.get('https://graph.microsoft.com/v1.0/me', { headers: { Authorization: `Bearer ${tokens.access_token}` } });
@@ -255,7 +256,7 @@ export async function renewMicrosoftNotification(
       { headers }
     );
   } catch {
-    console.warn('Microsoft subscription already expired');
+    logger.warn('Microsoft subscription already expired');
   }
 
   /* ------------------ Create new subscription ------------------ */
@@ -328,7 +329,7 @@ export async function renewMicrosoftNotification(
     response.data.id
   );
 
-  console.log(`✅ Microsoft ${subscriptionType} renewed for account ${accountId}`);
+  logger.info(`✅ Microsoft ${subscriptionType} renewed for account ${accountId}`);
 }
 
 export async function updateMicrosoftCalendarList(account, headers) {
@@ -521,7 +522,7 @@ export async function handleRecurringEventUpdate(
     // ✅ Pass userId to processEvents
     await processEvents(freshInstances, accountId, calendarId, userId);
   } catch (err) {
-    console.error('Error handling recurring event update:', err);
+    logger.error('Error handling recurring event update:', err);
   }
 }
 

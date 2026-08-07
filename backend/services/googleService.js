@@ -10,6 +10,7 @@ import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from 'uuid';
 import { scheduleRenewal } from "../utils/agendaUtils.js";
 import sseService from "./sseService.js";
+import logger from "../utils/logger.js";
 
 dotenv.config();
 
@@ -225,7 +226,7 @@ export async function createGoogleNotifications(userId, userEmail) {
   const expirationTime = Date.now() + (ttlDays * 24 * 60 * 60 * 1000);
 
   const calendarListChannelId = uuidv4();
-  console.log('Webhook Url is : ',process.env.WEBHOOK_BASE_URL);
+  logger.info('Webhook Url is : ',process.env.WEBHOOK_BASE_URL);
   const calendarListChannel = await calendar.calendarList.watch({
     requestBody: {
       id: calendarListChannelId,
@@ -332,7 +333,7 @@ export async function renewNotification(
       requestBody: { id: oldChannelId, resourceId },
     });
   } catch (err) {
-    console.warn('Google channel stop failed (likely expired)');
+    logger.warn('Google channel stop failed (likely expired)');
   }
 
   // Create new channel with 3-day TTL
@@ -405,7 +406,7 @@ export async function renewNotification(
     response.data.resourceId
   );
 
-  console.log(`✅ Google ${channelType} renewed for account ${accountId}`);
+  logger.info(`✅ Google ${channelType} renewed for account ${accountId}`);
 }
 
 /**
@@ -638,7 +639,7 @@ async function processRecurringEventMaster(
     // Process expanded instances with SSE updates
     await processBatchEvents(expandedInstances, accountId, calendarId, userId);
   } catch (err) {
-    console.error('Error processing recurring event master:', err);
+    logger.error('Error processing recurring event master:', err);
   }
 }
 

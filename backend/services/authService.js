@@ -5,6 +5,7 @@ import generateTokenAndSetCookie from "../utils/generateToken.js";
 import { sendOTPEmail } from "../utils/sendMail.js";
 import { google } from "googleapis";
 import dotenv from "dotenv";
+import logger from "../utils/logger.js";
 
 dotenv.config();
 
@@ -116,7 +117,7 @@ export async function forgotPasswordService(email) {
   try {
     await sendOTPEmail(email, otp, user.name);
   } catch (emailError) {
-    console.error('Email sending failed:', emailError);
+    logger.error('Email sending failed:', emailError);
     
     // Clear OTP if email fails
     user.forgotPasswordOTP = undefined;
@@ -285,7 +286,7 @@ export async function handleGoogleCallbackService(code, res) {
       }
     };
   } catch (error) {
-    console.error('Google callback error:', error);
+    logger.error('Google callback error:', error);
     throw error;
   }
 }
@@ -367,7 +368,7 @@ export async function handleMicrosoftCallbackService(code, res) {
       }
     };
   } catch (error) {
-    console.error('Microsoft callback error:', error);
+    logger.error('Microsoft callback error:', error);
     throw error;
   }
 }

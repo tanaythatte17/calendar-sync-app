@@ -1,18 +1,19 @@
 // controllers/microsoftWebhookController.js
 import calendarAccount from "../models/calendarAccountModel.js";
 import { microsoftWebhookQueue, microsoftCalendarListQueue } from "../services/queueService.js";
+import logger from "../utils/logger.js";
 
 export const microsoftEventsWebhookHandler = async (req, res) => {
-    console.log('🔔 Microsoft Events Webhook received a request');
+    logger.info('🔔 Microsoft Events Webhook received a request');
     // Handle validation challenge
     if (req.query.validationToken) {
-        console.log('🔐 Responding to Microsoft validation challenge');
+        logger.info('🔐 Responding to Microsoft validation challenge');
         return res.status(200).send(req.query.validationToken);
     }
 
     try {
         const notifications = Array.isArray(req.body?.value) ? req.body.value : [];
-        console.log('📬 Received calendar event notification:', notifications);
+        logger.info('📬 Received calendar event notification:', notifications);
 
         // Validate notifications
         if (notifications.length === 0) {
@@ -31,14 +32,14 @@ export const microsoftEventsWebhookHandler = async (req, res) => {
             });
 
             if (!account) {
-                console.warn(`No Microsoft account found for subscription ${subscriptionId}`);
+                logger.warn(`No Microsoft account found for subscription ${subscriptionId}`);
                 continue;
             }
 
             // Find the calendar entry associated with this subscription
             const eventSub = (account.webhookChannels?.events || []).find(e => e.channelId === subscriptionId);
             if (!eventSub) {
-                console.warn(`No event subscription entry found on account ${account._id} for subscription ${subscriptionId}`);
+                logger.warn(`No event subscription entry found on account ${account._id} for subscription ${subscriptionId}`);
                 continue;
             }
 
@@ -59,14 +60,14 @@ export const microsoftEventsWebhookHandler = async (req, res) => {
                 }
             );
 
-            console.log(`✅ Job queued for Microsoft calendar: ${calendarId}`);
+            logger.info(`✅ Job queued for Microsoft calendar: ${calendarId}`);
         }
 
         // Acknowledge immediately
         return res.sendStatus(202);
 
     } catch (err) {
-        console.error('Error handling Microsoft event webhook:', err.message);
+        logger.error('Error handling Microsoft event webhook:', err.message);
         return res.sendStatus(500);
     }
 };
@@ -74,13 +75,13 @@ export const microsoftEventsWebhookHandler = async (req, res) => {
 export const microsoftCalendarListWebhookHandler = async (req, res) => {
     // Handle validation challenge
     if (req.query.validationToken) {
-        console.log('🔐 Responding to Microsoft validation challenge');
+        logger.info('🔐 Responding to Microsoft validation challenge');
         return res.status(200).send(req.query.validationToken);
     }
 
     try {
         const notifications = Array.isArray(req.body?.value) ? req.body.value : [];
-        console.log('📬 Received calendar list notification:', notifications);
+        logger.info('📬 Received calendar list notification:', notifications);
 
         // Validate notifications
         if (notifications.length === 0) {
@@ -99,7 +100,7 @@ export const microsoftCalendarListWebhookHandler = async (req, res) => {
             });
 
             if (!account) {
-                console.warn(`No Microsoft account found for calendar-list subscription ${subscriptionId}`);
+                logger.warn(`No Microsoft account found for calendar-list subscription ${subscriptionId}`);
                 continue;
             }
 
@@ -117,14 +118,14 @@ export const microsoftCalendarListWebhookHandler = async (req, res) => {
                 }
             );
 
-            console.log(`✅ Calendar list job queued for Microsoft account: ${account._id}`);
+            logger.info(`✅ Calendar list job queued for Microsoft account: ${account._id}`);
         }
 
         // Acknowledge immediately
         return res.sendStatus(202);
 
     } catch (err) {
-        console.error('Error handling Microsoft calendar list webhook:', err.message);
+        logger.error('Error handling Microsoft calendar list webhook:', err.message);
         return res.sendStatus(500);
     }
 };

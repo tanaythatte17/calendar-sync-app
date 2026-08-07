@@ -1,6 +1,7 @@
 // services/queueService.js
 import { Queue } from 'bullmq';
 import dotenv from 'dotenv';
+import logger from "../utils/logger.js";
 
 dotenv.config();
 
@@ -51,4 +52,4 @@ export const microsoftCalendarListQueue = new Queue('microsoft-calendar-list', {
   defaultJobOptions,
 });
 
-console.log('✅ BullMQ queues initialized');
+logger.info('✅ BullMQ queues initialized');

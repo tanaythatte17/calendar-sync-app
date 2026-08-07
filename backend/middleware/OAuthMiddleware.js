@@ -1,3 +1,4 @@
+import logger from "../utils/logger.js";
 const protectOAuthRoute = async (req, res, next) => {
     try {
         // Check for token in Authorization header
@@ -19,7 +20,7 @@ const protectOAuthRoute = async (req, res, next) => {
         req.token = token;
         next();
     } catch (error) {
-        console.log(error.message);
+        logger.info(error.message);
         res.status(500).json({ error: "Error in OAuth Middleware" });
     }
 };
