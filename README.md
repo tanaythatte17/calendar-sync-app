@@ -221,6 +221,9 @@ POST /api/auth/login
 ### Setup
 
 ```bash
+# Move into the backend directory
+cd backend
+
 # Install dependencies
 npm install
 
