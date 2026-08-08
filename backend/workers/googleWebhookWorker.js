@@ -17,7 +17,6 @@ export const googleEventsWorker = new Worker(
 
     logger.info(`Processing webhook job for calendar: ${calendarId}`);
 
-    // 🔐 1. Fetch calendar account and refresh token
     const calendarAccount = await CalendarAccount.findById(accountId);
     if (!calendarAccount || !calendarAccount.refreshToken) {
       throw new Error('Calendar account or refresh token not found');
@@ -33,7 +32,6 @@ export const googleEventsWorker = new Worker(
       throw new Error('No syncToken found for this calendar');
     }
 
-    // 🔐 2. Create OAuth2 client
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
@@ -44,12 +42,10 @@ export const googleEventsWorker = new Worker(
       refresh_token: calendarAccount.refreshToken,
     });
 
-    // 🔄 3. Google Calendar API client
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
     const userId = calendarAccount.userId.toString();
 
-    // 🔁 4. Perform incremental sync
     const { events, eventsProcessed, newSyncToken } = await performIncrementalSync(
       calendar,
       calendarId,
@@ -58,7 +54,6 @@ export const googleEventsWorker = new Worker(
       userId
     );
 
-    // 💾 5. Save new syncToken
     calendarInfo.syncToken = newSyncToken;
     await calendarAccount.save();
 

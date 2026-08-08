@@ -504,7 +504,6 @@ export async function performIncrementalSync(calendar, calendarId, syncToken, ac
   const recurringMasters = allChangedEvents.filter(e => e.recurrence && e.recurrence.length > 0);
   const singleEvents = allChangedEvents.filter(e => !e.recurrence || e.recurrence.length === 0);
   
-  // ✅ Pass userId to processBatchEvents
   await processBatchEvents(singleEvents, accountId, calendarId, userId);
   
   const now = new Date();
@@ -515,7 +514,6 @@ export async function performIncrementalSync(calendar, calendarId, syncToken, ac
   
   for (const master of recurringMasters) {
     if (master.status === 'cancelled') {
-      // ✅ Fetch events before deleting to send SSE notifications
       if (userId) {
         const deletedEvents = await Event.find({ 
           calendarAccountId: accountId, 
@@ -550,7 +548,7 @@ export async function performIncrementalSync(calendar, calendarId, syncToken, ac
         accountId, 
         startDate, 
         endDate,
-        userId // ✅ Pass userId
+        userId
       );
     }
   }

@@ -229,7 +229,6 @@ export async function renewMicrosoftNotification(
   const account = await calendarAccount.findById(accountId);
   if (!account) return;
 
-  /* ------------------ Refresh token if needed ------------------ */
   if (account.expiresAt && account.expiresAt < new Date()) {
     const tokens = await refreshCalendarAccessToken(
       account._id,
@@ -249,7 +248,6 @@ export async function renewMicrosoftNotification(
     'Content-Type': 'application/json',
   };
 
-  /* ------------------ Delete old subscription ------------------ */
   try {
     await axios.delete(
       `https://graph.microsoft.com/v1.0/subscriptions/${oldSubscriptionId}`,
@@ -259,7 +257,6 @@ export async function renewMicrosoftNotification(
     logger.warn('Microsoft subscription already expired');
   }
 
-  /* ------------------ Create new subscription ------------------ */
   const expirationDateTime = new Date();
   expirationDateTime.setDate(expirationDateTime.getDate() + 3);
   const expirationTime = expirationDateTime.getTime();
@@ -293,7 +290,6 @@ export async function renewMicrosoftNotification(
     { headers }
   );
 
-  /* ------------------ Persist ------------------ */
   if (subscriptionType === 'calendar-list') {
     account.webhookChannels.calendarList = {
       channelId: response.data.id,
@@ -320,7 +316,6 @@ export async function renewMicrosoftNotification(
 
   await account.save();
 
-  /* ------------------ Schedule next renewal ------------------ */
   await scheduleMicrosoftRenewal(
     expirationTime,
     accountId,
@@ -371,9 +366,8 @@ export async function performMicrosoftIncrementalSync(
   accountId, 
   startTime, 
   endTime,
-  userId = null // ✅ Add userId parameter
+  userId = null
 ) {
-  // ✅ Send sync started status
   if (userId) {
     sseService.sendSyncStatus(
       userId,
@@ -388,7 +382,7 @@ export async function performMicrosoftIncrementalSync(
   
   for (const event of changedEvents) {
     if (event["@removed"]) {
-      await handleEventDeletion(event, accountId, calendarId, userId); // ✅ Pass userId
+      await handleEventDeletion(event, accountId, calendarId, userId);
     } else {
       if (event.type === 'seriesMaster') {
         modifiedSeries.add(event.id);
@@ -399,22 +393,22 @@ export async function performMicrosoftIncrementalSync(
           endTime, 
           headers, 
           accountId,
-          userId // ✅ Pass userId
+          userId
         );
       } else {
-        await processEvents([event], accountId, calendarId, userId); // ✅ Pass userId
+        await processEvents([event], accountId, calendarId, userId);
       }
     }
   }
-  
+
   await validateAllRecurringSeries(
-    accountId, 
-    calendarId, 
-    startTime, 
-    endTime, 
-    headers, 
+    accountId,
+    calendarId,
+    startTime,
+    endTime,
+    headers,
     modifiedSeries,
-    userId // ✅ Pass userId if this function exists
+    userId
   );
   
   return { eventsProcessed: changedEvents.length, newDeltaLink };
@@ -470,7 +464,7 @@ export async function handleRecurringEventUpdate(
   endTime, 
   headers, 
   accountId,
-  userId = null // ✅ Add userId parameter
+  userId = null
 ) {
   try {
     const existingInstances = await Event.find({ 
@@ -500,7 +494,6 @@ export async function handleRecurringEventUpdate(
     const instancesToDelete = [...existingIds].filter(id => !freshIds.has(id));
     
     if (instancesToDelete.length > 0) {
-      // ✅ Send delete notifications before deleting
       if (userId) {
         const eventsToDelete = existingInstances.filter(e => 
           instancesToDelete.includes(e.externalId)
@@ -519,7 +512,6 @@ export async function handleRecurringEventUpdate(
       });
     }
     
-    // ✅ Pass userId to processEvents
     await processEvents(freshInstances, accountId, calendarId, userId);
   } catch (err) {
     logger.error('Error handling recurring event update:', err);
@@ -562,8 +554,7 @@ export async function validateAllRecurringSeries(accountId, calendarId, startTim
 export async function handleEventDeletion(removedEvent, accountId, calendarId, userId = null) {
   const eventId = removedEvent.id;
   
-  // ✅ Fetch event(s) BEFORE deleting for SSE notification
-  const existingEvent = await Event.findOne({ 
+  const existingEvent = await Event.findOne({
     calendarAccountId: accountId, 
     calendarId, 
     source: 'microsoft', 
@@ -578,7 +569,6 @@ export async function handleEventDeletion(removedEvent, accountId, calendarId, u
   });
   
   if (existingEvent?.isRecurring || hasInstances) {
-    // ✅ Fetch all instances before deleting
     if (userId) {
       const allInstances = await Event.find({ 
         calendarAccountId: accountId, 
@@ -606,7 +596,6 @@ export async function handleEventDeletion(removedEvent, accountId, calendarId, u
       ] 
     });
   } else {
-    // ✅ Send delete notification for single event
     if (userId && existingEvent) {
       sseService.sendEventUpdate(userId, existingEvent.toObject(), 'deleted');
     }
@@ -672,7 +661,6 @@ export async function processEvents(events, accountId, calendarId, userId = null
     processedEventIds.push(event.id);
   }
   
-  // ✅ Send SSE notifications after processing
   if (userId && processedEventIds.length > 0) {
     const processedEvents = await Event.find({
       calendarAccountId: accountId,

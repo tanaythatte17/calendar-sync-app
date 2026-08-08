@@ -12,7 +12,11 @@ export async function deleteAccountAndCleanup({ accountId, requesterUserId }) {
   }
 
   try {
-    await stopGoogleWebhooks(account);
+    if (account.provider === "microsoft") {
+      await stopMicrosoftWebhooks(account);
+    } else {
+      await stopGoogleWebhooks(account);
+    }
   } catch (err) {
     // keep going even if webhook stop fails
   }
@@ -57,6 +61,35 @@ async function stopGoogleWebhooks(account) {
                 "Content-Type": "application/json",
               },
             }
+          );
+        }
+      }
+    }
+  } catch (err) {
+    // swallow; best effort
+  }
+}
+
+async function stopMicrosoftWebhooks(account) {
+  const headers = {
+    Authorization: `Bearer ${account.accessToken}`,
+    "Content-Type": "application/json",
+  };
+
+  try {
+    if (account.webhookChannels?.calendarList?.channelId) {
+      await axios.delete(
+        `https://graph.microsoft.com/v1.0/subscriptions/${account.webhookChannels.calendarList.channelId}`,
+        { headers }
+      );
+    }
+
+    if (Array.isArray(account.webhookChannels?.events)) {
+      for (const evtChannel of account.webhookChannels.events) {
+        if (evtChannel.channelId) {
+          await axios.delete(
+            `https://graph.microsoft.com/v1.0/subscriptions/${evtChannel.channelId}`,
+            { headers }
           );
         }
       }

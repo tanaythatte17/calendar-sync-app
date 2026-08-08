@@ -189,7 +189,7 @@ async function createMicrosoftEvent(account, eventData) {
   if (recurrence) {
     microsoftEvent.recurrence = formatMicrosoftRecurrence(
       recurrence,
-      startDateTime  // 👈 pass the event start time
+      startDateTime
     );
   }
 
@@ -294,7 +294,7 @@ function formatMicrosoftRecurrence(recurrence, eventStartDateTime) {
     }
   } else {
     throw new Error("eventStartDateTime is required for recurrence");
-  } // ✅ required
+  }
 
   if (count) {
     range.type = 'numbered';
