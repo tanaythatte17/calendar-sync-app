@@ -17,13 +17,6 @@ jobs:
         run: |
           echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ secrets.GHCR_USERNAME }}" --password-stdin
 
-      - name: Check Node and npm versions
-        run: |
-          node -v
-          npm -v
-          cd backend
-          npm ci --omit=dev
-
       - name: Build backend image
         run: |
           docker build \
