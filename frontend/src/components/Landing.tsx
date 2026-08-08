@@ -1,54 +1,41 @@
 import React from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
-import {
-  Box,
-  Button,
-  Container,
-  Typography,
-  Card,
-  CardContent,
-} from '@mui/material';
-import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
-import SyncIcon from '@mui/icons-material/Sync';
-import SecurityIcon from '@mui/icons-material/Security';
-import SpeedIcon from '@mui/icons-material/Speed';
+import { RefreshCw, Shield, Zap, Lock, Webhook, EyeOff, ArrowRight } from 'lucide-react';
+import { GoogleIcon, MicrosoftIcon } from './icons/BrandIcons';
 
 const FeatureCard: React.FC<{
   icon: React.ReactNode;
   title: string;
   description: string;
 }> = ({ icon, title, description }) => (
-  <Card sx={{ 
-    height: '100%', 
-    display: 'flex', 
-    flexDirection: 'column',
-    borderRadius: 4,
-    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
-    transition: 'all 0.3s ease-in-out',
-    '&:hover': {
-      transform: 'translateY(-8px)',
-      boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
-    }
-  }}>
-    <CardContent sx={{ flexGrow: 1, textAlign: 'center', p: 4 }}>
-      <Box sx={{ 
-        color: 'primary.main', 
-        mb: 3,
-        display: 'flex',
-        justifyContent: 'center',
-        '& > *': { fontSize: 48 }
-      }}>
-        {icon}
-      </Box>
-      <Typography variant="h5" component="h3" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-        {title}
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-        {description}
-      </Typography>
-    </CardContent>
-  </Card>
+  <div className="bg-white border border-ucv-border rounded-xl p-7 h-full">
+    <div className="w-11 h-11 rounded-lg bg-ucv-primary-light text-ucv-primary flex items-center justify-center mb-5">
+      {icon}
+    </div>
+    <h3 className="text-lg font-bold text-ucv-text mb-2">{title}</h3>
+    <p className="text-sm leading-relaxed text-ucv-text-muted">{description}</p>
+  </div>
+);
+
+const StepCard: React.FC<{ n: string; title: string; description: string }> = ({ n, title, description }) => (
+  <div className="bg-ucv-surface border border-ucv-border rounded-xl p-7">
+    <div className="w-10 h-10 rounded-lg bg-ucv-primary text-white flex items-center justify-center font-bold text-sm mb-5">
+      {n}
+    </div>
+    <h3 className="text-lg font-bold text-ucv-text mb-2">{title}</h3>
+    <p className="text-sm leading-relaxed text-ucv-text-muted">{description}</p>
+  </div>
+);
+
+const SecurityCard: React.FC<{ icon: React.ReactNode; title: string; description: string }> = ({ icon, title, description }) => (
+  <div className="bg-white border border-ucv-border rounded-xl p-6">
+    <div className="w-9 h-9 rounded-lg bg-ucv-primary-light text-ucv-primary flex items-center justify-center mb-4">
+      {icon}
+    </div>
+    <h3 className="text-base font-bold text-ucv-text mb-1.5">{title}</h3>
+    <p className="text-sm leading-relaxed text-ucv-text-muted">{description}</p>
+  </div>
 );
 
 const Landing: React.FC = () => {
@@ -59,479 +46,201 @@ const Landing: React.FC = () => {
         <title>Unified Calendar View - Sync Google & Microsoft Calendars in Real-Time</title>
         <meta name="description" content="Stop switching between calendar apps. Sync Google Calendar and Microsoft Outlook in one unified dashboard with instant real-time updates. Secure, fast, and privacy-focused." />
         <meta name="keywords" content="calendar sync, google calendar, microsoft outlook, calendar integration, unified calendar, real-time sync, calendar management" />
-        
+
         {/* Open Graph / Facebook */}
         <meta property="og:type" content="website" />
         <meta property="og:title" content="Unified Calendar View - Sync Google & Microsoft Calendars" />
         <meta property="og:description" content="Stop switching between calendar apps. Get real-time calendar sync across Google Calendar and Outlook in one unified dashboard." />
-        
+
         {/* Twitter */}
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="Unified Calendar View - Sync Google & Microsoft Calendars" />
         <meta name="twitter:description" content="Stop switching between calendar apps. Get real-time calendar sync across Google Calendar and Outlook in one unified dashboard." />
-        
+
         <link rel="canonical" href="https://unifiedcalendarview.com" />
       </Helmet>
 
-      <Box sx={{ bgcolor: 'background.default', minHeight: '100vh' }}>
-        {/* Hero Section */}
-        <Box
-          sx={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: 'white',
-            py: { xs: 8, md: 12 },
-            mb: 8,
-            position: 'relative',
-            overflow: 'hidden',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.05"%3E%3Ccircle cx="30" cy="30" r="2"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-              opacity: 0.3,
-            }
-          }}
-        >
-          <Container maxWidth="lg">
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography 
-                variant="h1" 
-                component="h1" 
-                gutterBottom 
-                sx={{ 
-                  fontWeight: 700,
-                  fontSize: { xs: '2.5rem', md: '3.5rem' },
-                  lineHeight: 1.2,
-                  mb: 3
-                }}
-              >
-                Stop Switching Tabs Between
-                <br />
-                <span style={{ color: '#fbbf24' }}>Google & Microsoft Calendars</span>
-              </Typography>
-              <Typography 
-                variant="h2" 
-                component="h2"
-                sx={{ 
-                  mb: 4, 
-                  opacity: 0.9,
-                  lineHeight: 1.5,
-                  fontWeight: 300,
-                  fontSize: { xs: '1.25rem', md: '1.5rem' },
-                  maxWidth: 900,
-                  mx: 'auto'
-                }}
-              >
-                Tired of switching between calendar apps? Get real-time calendar sync across Google Calendar and Outlook in one unified dashboard. See all your meetings, events, and appointments in a single view.
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', mb: 6 }}>
-                <Button
-                  component={RouterLink}
-                  to="/how-it-works"
-                  variant="outlined"
-                  size="large"
-                  sx={{
-                    color: '#ffffff',
-                    borderColor: 'rgba(255, 255, 255, 0.5)',
-                    px: 6,
-                    py: 1.5,
-                    fontSize: '1.1rem',
-                    fontWeight: 600,
-                    borderRadius: 3,
-                    borderWidth: 2,
-                    textTransform: 'none',
-                    backdropFilter: 'blur(10px)',
-                    bgcolor: 'rgba(255, 255, 255, 0.1)',
-                    '&:hover': {
-                      bgcolor: 'rgba(255, 255, 255, 0.2)',
-                      borderColor: '#ffffff',
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 15px 35px rgba(255, 255, 255, 0.2)',
-                    },
-                    transition: 'all 0.3s ease-in-out'
-                  }}
-                >
-                  How It Works
-                </Button>
-                
-                <Button
-                  component={RouterLink}
-                  to="/login"
-                  variant="outlined"
-                  size="large"
-                  sx={{
-                    color: '#ffffff',
-                    borderColor: 'rgba(255, 255, 255, 0.5)',
-                    px: 6,
-                    py: 1.5,
-                    fontSize: '1.1rem',
-                    fontWeight: 600,
-                    borderRadius: 3,
-                    borderWidth: 2,
-                    textTransform: 'none',
-                    backdropFilter: 'blur(10px)',
-                    bgcolor: 'rgba(255, 255, 255, 0.1)',
-                    '&:hover': {
-                      bgcolor: 'rgba(255, 255, 255, 0.2)',
-                      borderColor: '#ffffff',
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 15px 35px rgba(255, 255, 255, 0.2)',
-                    },
-                    transition: 'all 0.3s ease-in-out'
-                  }}
-                >
-                  Sign In
-                </Button>
-              </Box>
-              
-              {/* Video Section */}
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <Box
-                  sx={{
-                    width: '100%',
-                    maxWidth: 1000,
-                    height: { xs: 300, sm: 400, md: 550 },
-                    background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
-                    borderRadius: 4,
-                    backdropFilter: 'blur(10px)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-                  }}
-                >
-                  <video
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      borderRadius: '16px',
-                    }}
-                  >
-                    <source src="/demo_video.mp4" type="video/mp4" />
-                    {/* Fallback icon if video doesn't load */}
-                    <CalendarMonthIcon sx={{ fontSize: 120, opacity: 0.8 }} />
-                  </video>
-                </Box>
-              </Box>
-            </Box>
-          </Container>
-        </Box>
-
-        {/* Features Section */}
-        <Container maxWidth="lg" sx={{ mb: 12 }}>
-          <Box sx={{ textAlign: 'center', mb: 8 }}>
-            <Typography
-              variant="h2"
-              component="h2"
-              gutterBottom
-              sx={{ 
-                fontWeight: 700,
-                mb: 2,
-                fontSize: { xs: '2rem', md: '3rem' },
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                backgroundClip: 'text',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}
+      <div className="bg-white text-ucv-text">
+        {/* Hero */}
+        <div className="max-w-3xl mx-auto px-6 pt-16 pb-12 text-center">
+          <div className="inline-flex items-center gap-1.5 bg-ucv-primary-light text-ucv-primary px-3.5 py-1.5 rounded-lg text-sm font-semibold mb-6">
+            <RefreshCw className="w-3.5 h-3.5" />
+            Real-time calendar sync
+          </div>
+          <h1 className="text-4xl sm:text-5xl font-extrabold leading-tight tracking-tight mb-6">
+            Sync Google and Microsoft Calendars in Real Time
+          </h1>
+          <p className="text-lg sm:text-xl leading-relaxed text-ucv-text-muted max-w-2xl mx-auto mb-10">
+            Secure OAuth 2.0 authentication, instant synchronization across multiple calendars, and a single unified view — on any platform.
+          </p>
+          <div className="flex gap-3.5 justify-center flex-wrap">
+            <RouterLink
+              to="/register"
+              className="bg-ucv-primary text-white px-7 py-3.5 rounded-lg text-[15px] font-semibold hover:bg-ucv-primary-hover transition-colors"
             >
-              Unified Calendar Management Made Simple
-            </Typography>
-            <Typography variant="h3" component="h3" color="text.secondary" sx={{ maxWidth: 700, mx: 'auto', fontSize: { xs: '1.1rem', md: '1.25rem' } }}>
-              Experience seamless calendar integration with instant real-time updates across all your devices. We only access your calendar data - nothing else from your accounts.
-            </Typography>
-          </Box>
-          
-          <Box sx={{ 
-            display: 'grid', 
-            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
-            gap: 4,
-            justifyContent: 'center'
-          }}>
+              Get Started
+            </RouterLink>
+            <a
+              href="#how-it-works"
+              className="bg-white text-ucv-text px-7 py-3.5 rounded-lg text-[15px] font-semibold border border-ucv-border hover:border-ucv-text-disabled transition-colors"
+            >
+              Learn More
+            </a>
+          </div>
+        </div>
+
+        {/* How It Works */}
+        <div id="how-it-works" className="max-w-5xl mx-auto px-6 pb-16">
+          <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">How It Works</h2>
+          <p className="text-center text-ucv-text-muted text-base mb-12">Three steps to a unified calendar.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <StepCard
+              n="01"
+              title="Connect your account"
+              description="Sign in with Google or Microsoft using secure OAuth 2.0 — we never see your password."
+            />
+            <StepCard
+              n="02"
+              title="We securely sync your calendars"
+              description="Events, calendars, and colors sync automatically in the background via encrypted webhooks."
+            />
+            <StepCard
+              n="03"
+              title="Receive real-time updates instantly"
+              description="Changes appear the moment they happen, pushed live over an authenticated connection."
+            />
+          </div>
+        </div>
+
+        {/* Features */}
+        <div className="max-w-5xl mx-auto px-6 pb-16">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             <FeatureCard
-              icon={<SyncIcon />}
+              icon={<Zap className="w-5 h-5" />}
               title="Instant Real-Time Sync"
               description="Webhook-powered updates mean your calendar changes appear instantly across all platforms. Create an event in Google Calendar and see it immediately in your unified view."
             />
             <FeatureCard
-              icon={<SecurityIcon />}
+              icon={<EyeOff className="w-5 h-5" />}
               title="Privacy-First Calendar Access"
               description="We only access your calendar data - nothing else. Your emails, files, and other account information remain completely private and secure."
             />
             <FeatureCard
-              icon={<SpeedIcon />}
+              icon={<RefreshCw className="w-5 h-5" />}
               title="Lightning-Fast Calendar Sync"
               description="No more waiting for calendar updates. Our advanced sync technology ensures your Google and Microsoft calendars update in real-time, every time."
             />
-          </Box>
-        </Container>
+          </div>
+        </div>
 
-        {/* How It Works Section */}
-        <Box sx={{ bgcolor: 'grey.50', py: 12 }}>
-          <Container maxWidth="lg">
-            <Typography
-              variant="h2"
-              component="h2"
-              align="center"
-              gutterBottom
-              sx={{ 
-                fontWeight: 700,
-                mb: 6,
-                fontSize: { xs: '2rem', md: '3rem' },
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                backgroundClip: 'text',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent'
-              }}
-            >
-              How Calendar Sync Works
-            </Typography>
-            
-            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'center', gap: 6 }}>
-              <Box sx={{ flex: 1, display: { xs: 'none', md: 'block' } }}>
-                <Box
-                  sx={{
-                    width: '100%',
-                    height: 300,
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    borderRadius: 4,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'white',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    '&::before': {
-                      content: '""',
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: 'url("data:image/svg+xml,%3Csvg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="%23ffffff" fill-opacity="0.1"%3E%3Ccircle cx="20" cy="20" r="1"/%3E%3C/g%3E%3C/svg%3E")',
-                    }
-                  }}
-                >
-                  <CalendarMonthIcon sx={{ fontSize: 80, opacity: 0.8 }} />
-                </Box>
-              </Box>
-              
-              <Box sx={{ flex: 1, pl: { md: 4 } }}>
-                <Typography variant="h3" component="h3" gutterBottom sx={{ fontWeight: 600, mb: 4, fontSize: { xs: '1.75rem', md: '2rem' } }}>
-                  Connect Multiple Calendars in Minutes
-                </Typography>
-                
-                <Box sx={{ space: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 4 }}>
-                    <Box
-                      sx={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: '50%',
-                        bgcolor: 'primary.main',
-                        color: 'white',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 600,
-                        mr: 3,
-                        flexShrink: 0
-                      }}
-                    >
-                      1
-                    </Box>
-                    <Box>
-                      <Typography variant="h4" component="h4" gutterBottom sx={{ fontWeight: 600, fontSize: '1.25rem' }}>
-                        Secure Calendar Connection
-                      </Typography>
-                      <Typography variant="body1" color="text.secondary">
-                        Connect your Google Calendar and Microsoft Outlook with secure OAuth. We only access your calendar data - no emails, files, or personal information.
-                      </Typography>
-                    </Box>
-                  </Box>
-                  
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 4 }}>
-                    <Box
-                      sx={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: '50%',
-                        bgcolor: 'primary.main',
-                        color: 'white',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 600,
-                        mr: 3,
-                        flexShrink: 0
-                      }}
-                    >
-                      2
-                    </Box>
-                    <Box>
-                      <Typography variant="h4" component="h4" gutterBottom sx={{ fontWeight: 600, fontSize: '1.25rem' }}>
-                        Unified Calendar Dashboard
-                      </Typography>
-                      <Typography variant="body1" color="text.secondary">
-                        View all your Google and Microsoft calendar events in one beautiful interface. No more switching between tabs or apps.
-                      </Typography>
-                    </Box>
-                  </Box>
-                  
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
-                    <Box
-                      sx={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: '50%',
-                        bgcolor: 'primary.main',
-                        color: 'white',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 600,
-                        mr: 3,
-                        flexShrink: 0
-                      }}
-                    >
-                      3
-                    </Box>
-                    <Box>
-                      <Typography variant="h4" component="h4" gutterBottom sx={{ fontWeight: 600, fontSize: '1.25rem' }}>
-                        Real-Time Calendar Updates
-                      </Typography>
-                      <Typography variant="body1" color="text.secondary">
-                        Enjoy instant synchronization with webhook technology. Create, edit, or delete events anywhere and see changes immediately across all platforms.
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Box>
-              </Box>
-            </Box>
-          </Container>
-        </Box>
+        {/* Security */}
+        <div className="bg-ucv-surface border-y border-ucv-border py-16 px-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-1.5 bg-ucv-green-light text-ucv-green px-3.5 py-1.5 rounded-lg text-sm font-semibold mb-4">
+                <Shield className="w-3.5 h-3.5" />
+                Security first
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3">Your calendar data, protected end to end</h2>
+              <p className="text-ucv-text-muted text-base max-w-xl mx-auto">We built this the way a security team would want it built.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              <SecurityCard
+                icon={<Lock className="w-[18px] h-[18px]" />}
+                title="OAuth 2.0 authentication"
+                description="You sign in directly with Google or Microsoft. We never see or store your password."
+              />
+              <SecurityCard
+                icon={<Shield className="w-[18px] h-[18px]" />}
+                title="Encrypted access tokens"
+                description="Access tokens are encrypted at rest and scoped to calendar read/write only."
+              />
+              <SecurityCard
+                icon={<Shield className="w-[18px] h-[18px]" />}
+                title="Encrypted refresh tokens"
+                description="Refresh tokens use the same encryption standard, never stored in plain text."
+              />
+              <SecurityCard
+                icon={<Webhook className="w-[18px] h-[18px]" />}
+                title="Change-only webhooks"
+                description="Providers notify us only when something changes — never full calendar contents."
+              />
+              <SecurityCard
+                icon={<RefreshCw className="w-[18px] h-[18px]" />}
+                title="Authenticated real-time sync"
+                description="Live updates stream over an authenticated, per-user connection."
+              />
+              <SecurityCard
+                icon={<EyeOff className="w-[18px] h-[18px]" />}
+                title="Your data stays private"
+                description="Your calendar data is never shared, sold, or used for anything but sync."
+              />
+            </div>
+          </div>
+        </div>
 
-        {/* CTA Section */}
-        <Box sx={{ 
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          py: 12,
-          position: 'relative',
-          overflow: 'hidden',
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.05"%3E%3Ccircle cx="30" cy="30" r="2"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-            opacity: 0.3,
-          }
-        }}>
-          <Container maxWidth="md">
-            <Box sx={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
-              <Typography 
-                variant="h2" 
-                component="h2" 
-                gutterBottom 
-                sx={{ 
-                  color: 'white',
-                  fontWeight: 700,
-                  mb: 3,
-                  fontSize: { xs: '2rem', md: '3rem' }
-                }}
+        {/* Supported Providers */}
+        <div className="max-w-5xl mx-auto px-6 py-16">
+          <h2 className="text-center text-2xl sm:text-3xl font-extrabold tracking-tight mb-12">Supported Providers</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className="border border-ucv-border rounded-xl p-7 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-white border border-ucv-border flex items-center justify-center flex-shrink-0">
+                <GoogleIcon size={24} />
+              </div>
+              <div className="flex-1">
+                <div className="font-bold text-base">Google Calendar</div>
+                <div className="text-ucv-text-muted text-sm">Full two-way sync</div>
+              </div>
+              <div className="bg-ucv-green-light text-ucv-green text-xs font-semibold px-2.5 py-1 rounded-md flex-shrink-0">Supported</div>
+            </div>
+            <div className="border border-ucv-border rounded-xl p-7 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-lg bg-white border border-ucv-border flex items-center justify-center flex-shrink-0">
+                <MicrosoftIcon size={22} />
+              </div>
+              <div className="flex-1">
+                <div className="font-bold text-base">Microsoft Outlook Calendar</div>
+                <div className="text-ucv-text-muted text-sm">Full two-way sync</div>
+              </div>
+              <div className="bg-ucv-green-light text-ucv-green text-xs font-semibold px-2.5 py-1 rounded-md flex-shrink-0">Supported</div>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA */}
+        <div className="bg-ucv-primary py-16 px-6">
+          <div className="max-w-2xl mx-auto text-center">
+            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white mb-4">Ready to Unify Your Calendar Experience?</h2>
+            <p className="text-white/90 text-base sm:text-lg leading-relaxed mb-8">
+              Join thousands who've stopped juggling multiple calendar apps. Connect your Google and Microsoft calendars today and experience seamless real-time synchronization.
+            </p>
+            <div className="flex justify-center gap-3.5 flex-wrap">
+              <RouterLink
+                to="/register"
+                className="bg-white text-ucv-primary px-7 py-3.5 rounded-lg text-[15px] font-semibold hover:bg-ucv-primary-light transition-colors inline-flex items-center gap-2"
               >
-                Ready to Unify Your Calendar Experience?
-              </Typography>
-              <Typography 
-                variant="h3" 
-                component="h3"
-                sx={{ 
-                  color: 'rgba(255, 255, 255, 0.9)',
-                  mb: 6,
-                  lineHeight: 1.6,
-                  fontSize: { xs: '1.1rem', md: '1.25rem' },
-                  fontWeight: 300
-                }}
+                Start Syncing Now
+                <ArrowRight className="w-4 h-4" />
+              </RouterLink>
+              <RouterLink
+                to="/login"
+                className="border border-white/60 text-white px-7 py-3.5 rounded-lg text-[15px] font-semibold hover:bg-white/10 transition-colors"
               >
-                Join thousands who've stopped juggling multiple calendar apps. Connect your Google and Microsoft calendars today and experience seamless real-time synchronization.
-              </Typography>
-              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3, flexWrap: 'wrap' }}>
-                <Button
-                  component={RouterLink}
-                  to="/register"
-                  variant="contained"
-                  size="large"
-                  sx={{
-                    bgcolor: '#fbbf24',
-                    color: '#1f2937',
-                    px: 6,
-                    py: 2,
-                    fontSize: '1.2rem',
-                    fontWeight: 600,
-                    borderRadius: 3,
-                    textTransform: 'none',
-                    boxShadow: '0 10px 25px rgba(251, 191, 36, 0.3)',
-                    '&:hover': {
-                      bgcolor: '#f59e0b',
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 15px 35px rgba(251, 191, 36, 0.4)',
-                    },
-                    transition: 'all 0.3s ease-in-out'
-                  }}
-                >
-                  Start Syncing Now
-                </Button>
-                <Button
-                  component={RouterLink}
-                  to="/login"
-                  variant="outlined"
-                  size="large"
-                  sx={{
-                    color: 'white',
-                    borderColor: 'white',
-                    px: 6,
-                    py: 2,
-                    fontSize: '1.2rem',
-                    fontWeight: 600,
-                    borderRadius: 3,
-                    textTransform: 'none',
-                    '&:hover': {
-                      bgcolor: 'rgba(255, 255, 255, 0.1)',
-                      borderColor: 'white',
-                      transform: 'translateY(-2px)',
-                    },
-                    transition: 'all 0.3s ease-in-out'
-                  }}
-                >
-                  Sign In
-                </Button>
-              </Box>
-            </Box>
-          </Container>
-        </Box>
-        {/* Footer with Policy link */}
-        <Box sx={{ bgcolor: 'background.paper', py: 3, textAlign: 'center', borderTop: '1px solid #eee' }}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Sign In
+              </RouterLink>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-ucv-border py-10 px-6 text-center">
+          <p className="text-sm text-ucv-text-muted mb-2">
             For any questions feel free to reach out to admin@unifiedcalendarview.com
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            <RouterLink to="/policy" style={{ color: '#667eea', textDecoration: 'underline' }}>
-              Privacy Policy
-            </RouterLink>
-          </Typography>
-        </Box>
-      </Box>
+          </p>
+          <RouterLink to="/policy" className="text-sm font-semibold text-ucv-primary hover:underline">
+            Privacy Policy
+          </RouterLink>
+        </div>
+      </div>
     </>
   );
 };

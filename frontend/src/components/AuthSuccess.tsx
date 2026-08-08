@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, CircularProgress, Typography, Container } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 
 const AuthSuccess: React.FC = () => {
@@ -35,54 +34,13 @@ const AuthSuccess: React.FC = () => {
   }, [navigate, searchParams, user]);
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Container maxWidth="sm">
-        <Box
-          sx={{
-            textAlign: 'center',
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(10px)',
-            borderRadius: 4,
-            padding: 6,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
-          }}
-        >
-          <CircularProgress
-            size={60}
-            sx={{
-              color: '#667eea',
-              mb: 3,
-            }}
-          />
-          <Typography
-            variant="h5"
-            sx={{
-              fontWeight: 600,
-              color: '#333',
-              mb: 2,
-            }}
-          >
-            Completing Authentication
-          </Typography>
-          <Typography
-            variant="body1"
-            sx={{
-              color: 'text.secondary',
-            }}
-          >
-            Please wait while we verify your credentials...
-          </Typography>
-        </Box>
-      </Container>
-    </Box>
+    <div className="min-h-screen bg-ucv-surface flex items-center justify-center px-6">
+      <div className="w-full max-w-sm text-center bg-white border border-ucv-border rounded-lg p-12 shadow-sm">
+        <div className="w-14 h-14 border-4 border-ucv-primary-light border-t-ucv-primary rounded-full animate-spin mx-auto mb-6" />
+        <h1 className="text-xl font-bold text-ucv-text mb-2">Completing Authentication</h1>
+        <p className="text-sm text-ucv-text-muted">Please wait while we verify your credentials...</p>
+      </div>
+    </div>
   );
 };
 

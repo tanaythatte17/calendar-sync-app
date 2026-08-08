@@ -13,6 +13,7 @@ frontend/node_modules/
 
 # Build artifacts
 frontend/build/
+frontend/dist/
 backend/dist/
 
 # Environment files

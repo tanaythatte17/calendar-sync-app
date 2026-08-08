@@ -1,17 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  TextField,
-  Typography,
-  Container,
-  Paper,
-  Link,
-  Alert,
-  InputAdornment,
-} from '@mui/material';
 import { ArrowLeft, Mail, Lock } from 'lucide-react';
+import logoImage from '../../assets/images/UCV.png';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -96,7 +86,7 @@ const ForgotPassword: React.FC = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
-    
+
     const otpString = otp.join('');
     if (otpString.length !== 6) {
       setError('Please enter all 6 digits');
@@ -182,91 +172,48 @@ const ForgotPassword: React.FC = () => {
     }
   };
 
+  const inputClasses = "w-full px-3 py-2.5 border border-ucv-border rounded-lg text-sm text-ucv-text focus:outline-none focus:border-ucv-primary focus:ring-2 focus:ring-ucv-primary-light";
+  const primaryButtonClasses = "w-full bg-ucv-primary text-white py-2.5 rounded-lg text-sm font-semibold hover:bg-ucv-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+
   const renderStepContent = () => {
     switch (step) {
       case 1:
         return (
-          <Box component="form" onSubmit={handleEmailSubmit} sx={{ width: '100%' }}>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 3, textAlign: 'center' }}>
-              Enter your email address and we'll send you a verification code to reset your password.
-            </Typography>
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="email"
-              label="Email Address"
-              name="email"
-              autoComplete="email"
-              autoFocus
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Mail size={20} color="#667eea" />
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                mb: 4,
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                  '&:hover fieldset': {
-                    borderColor: '#667eea',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#667eea',
-                  },
-                },
-                '& .MuiInputLabel-root.Mui-focused': {
-                  color: '#667eea',
-                },
-              }}
-            />
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              disabled={loading}
-              sx={{
-                mb: 3,
-                py: 1.5,
-                fontSize: '1.1rem',
-                fontWeight: 600,
-                borderRadius: 2,
-                textTransform: 'none',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                boxShadow: '0 8px 25px rgba(102, 126, 234, 0.3)',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)',
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 12px 35px rgba(102, 126, 234, 0.4)',
-                },
-                transition: 'all 0.3s ease-in-out',
-              }}
-            >
+          <form onSubmit={handleEmailSubmit} className="w-full">
+            <p className="text-sm text-ucv-text-muted text-center mb-6">
+              Enter your email address and we'll send you a 6-digit verification code to reset your password.
+            </p>
+            <label htmlFor="email" className="block text-sm font-semibold text-ucv-text-secondary mb-1.5">Email</label>
+            <div className="relative mb-6">
+              <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-ucv-primary" />
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                autoFocus
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+                className={`${inputClasses} pl-10`}
+              />
+            </div>
+            <button type="submit" disabled={loading} className={primaryButtonClasses}>
               {loading ? 'Sending...' : 'Send Verification Code'}
-            </Button>
-          </Box>
+            </button>
+          </form>
         );
 
       case 2:
         return (
-          <Box component="form" onSubmit={handleOtpSubmit} sx={{ width: '100%' }}>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 3, textAlign: 'center' }}>
-              We've sent a 6-digit verification code to <strong>{email}</strong>
-            </Typography>
-            <Box
-              sx={{
-                display: 'flex',
-                gap: 2,
-                justifyContent: 'center',
-                mb: 4,
-              }}
-            >
+          <form onSubmit={handleOtpSubmit} className="w-full">
+            <p className="text-sm text-ucv-text-muted text-center mb-6">
+              We've sent a 6-digit verification code to <strong className="text-ucv-text">{email}</strong>
+            </p>
+            <div className="flex gap-2 justify-center mb-6">
               {otp.map((digit, index) => (
-                <TextField
+                <input
                   key={index}
                   id={`otp-${index}`}
                   value={digit}
@@ -278,170 +225,64 @@ const ForgotPassword: React.FC = () => {
                       prevInput?.focus();
                     }
                   }}
-                  inputProps={{
-                    maxLength: 1,
-                    style: {
-                      textAlign: 'center',
-                      fontSize: '1.5rem',
-                      fontWeight: 600,
-                    },
-                  }}
-                  sx={{
-                    width: { xs: 45, sm: 55 },
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2,
-                      '&:hover fieldset': {
-                        borderColor: '#667eea',
-                      },
-                      '&.Mui-focused fieldset': {
-                        borderColor: '#667eea',
-                        borderWidth: 2,
-                      },
-                    },
-                  }}
+                  maxLength={1}
+                  className="w-11 h-[52px] text-center border border-ucv-border rounded-lg text-xl font-bold text-ucv-text focus:outline-none focus:border-ucv-primary focus:ring-2 focus:ring-ucv-primary-light"
                 />
               ))}
-            </Box>
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              disabled={loading || otp.join('').length !== 6}
-              sx={{
-                mb: 2,
-                py: 1.5,
-                fontSize: '1.1rem',
-                fontWeight: 600,
-                borderRadius: 2,
-                textTransform: 'none',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                boxShadow: '0 8px 25px rgba(102, 126, 234, 0.3)',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)',
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 12px 35px rgba(102, 126, 234, 0.4)',
-                },
-                transition: 'all 0.3s ease-in-out',
-              }}
-            >
+            </div>
+            <button type="submit" disabled={loading || otp.join('').length !== 6} className={`${primaryButtonClasses} mb-2`}>
               {loading ? 'Verifying...' : 'Verify Code'}
-            </Button>
-            <Button
-              fullWidth
-              variant="text"
+            </button>
+            <button
+              type="button"
               onClick={() => setStep(1)}
-              sx={{
-                color: 'text.secondary',
-                textTransform: 'none',
-                '&:hover': {
-                  color: '#667eea',
-                },
-              }}
+              className="w-full text-ucv-text-muted text-sm py-2 hover:text-ucv-primary transition-colors"
             >
               Change Email
-            </Button>
-          </Box>
+            </button>
+          </form>
         );
 
       case 3:
         return (
-          <Box component="form" onSubmit={handlePasswordReset} sx={{ width: '100%' }}>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 3, textAlign: 'center' }}>
+          <form onSubmit={handlePasswordReset} className="w-full">
+            <p className="text-sm text-ucv-text-muted text-center mb-6">
               Create a new password for your account
-            </Typography>
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="newPassword"
-              label="New Password"
-              type="password"
-              id="newPassword"
-              autoComplete="new-password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Lock size={20} color="#667eea" />
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                mb: 3,
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                  '&:hover fieldset': {
-                    borderColor: '#667eea',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#667eea',
-                  },
-                },
-                '& .MuiInputLabel-root.Mui-focused': {
-                  color: '#667eea',
-                },
-              }}
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="confirmPassword"
-              label="Confirm New Password"
-              type="password"
-              id="confirmPassword"
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Lock size={20} color="#667eea" />
-                  </InputAdornment>
-                ),
-              }}
-              sx={{
-                mb: 4,
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                  '&:hover fieldset': {
-                    borderColor: '#667eea',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#667eea',
-                  },
-                },
-                '& .MuiInputLabel-root.Mui-focused': {
-                  color: '#667eea',
-                },
-              }}
-            />
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              disabled={loading}
-              sx={{
-                mb: 3,
-                py: 1.5,
-                fontSize: '1.1rem',
-                fontWeight: 600,
-                borderRadius: 2,
-                textTransform: 'none',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                boxShadow: '0 8px 25px rgba(102, 126, 234, 0.3)',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%)',
-                  transform: 'translateY(-2px)',
-                  boxShadow: '0 12px 35px rgba(102, 126, 234, 0.4)',
-                },
-                transition: 'all 0.3s ease-in-out',
-              }}
-            >
+            </p>
+            <label htmlFor="newPassword" className="block text-sm font-semibold text-ucv-text-secondary mb-1.5">New Password</label>
+            <div className="relative mb-4">
+              <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-ucv-primary" />
+              <input
+                id="newPassword"
+                name="newPassword"
+                type="password"
+                autoComplete="new-password"
+                required
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="••••••••"
+                className={`${inputClasses} pl-10`}
+              />
+            </div>
+            <label htmlFor="confirmPassword" className="block text-sm font-semibold text-ucv-text-secondary mb-1.5">Confirm New Password</label>
+            <div className="relative mb-6">
+              <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-ucv-primary" />
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                className={`${inputClasses} pl-10`}
+              />
+            </div>
+            <button type="submit" disabled={loading} className={primaryButtonClasses}>
               {loading ? 'Resetting Password...' : 'Reset Password'}
-            </Button>
-          </Box>
+            </button>
+          </form>
         );
 
       default:
@@ -450,139 +291,48 @@ const ForgotPassword: React.FC = () => {
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        py: 4,
-        position: 'relative',
-        zIndex: 0,
-      }}
-    >
-      <Container component="main" maxWidth="sm">
-        <Paper
-          elevation={24}
-          sx={{
-            padding: { xs: 4, md: 6 },
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            width: '100%',
-            borderRadius: 4,
-            background: 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            position: 'relative',
-            overflow: 'hidden',
-            zIndex: 0,
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background:
-                'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23667eea" fill-opacity="0.03"%3E%3Ccircle cx="30" cy="30" r="2"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-              opacity: 0.5,
-              zIndex: 0,
-            },
-          }}
-        >
-          <Box sx={{ position: 'relative', zIndex: 1, width: '100%' }}>
-            <Typography
-              component="h1"
-              variant="h3"
-              gutterBottom
-              sx={{
-                fontWeight: 700,
-                textAlign: 'center',
-                mb: 1,
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                backgroundClip: 'text',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-              }}
-            >
-              {step === 1 && 'Reset Password'}
-              {step === 2 && 'Verify Code'}
-              {step === 3 && 'New Password'}
-            </Typography>
-            <Typography
-              variant="h6"
-              color="text.secondary"
-              sx={{
-                mb: 4,
-                textAlign: 'center',
-                fontWeight: 300,
-              }}
-            >
-              {step === 1 && 'No worries, we\'ll help you reset it'}
-              {step === 2 && 'Check your email for the code'}
-              {step === 3 && 'Choose a strong password'}
-            </Typography>
+    <div className="min-h-screen bg-ucv-surface flex items-center justify-center py-16 px-6">
+      <div className="w-full max-w-[420px] bg-white border border-ucv-border rounded-lg p-9 shadow-sm">
+        <div className="flex items-center gap-2 justify-center mb-7">
+          <img src={logoImage} alt="logo" className="w-[26px] h-[26px] object-contain" />
+          <span className="font-bold text-base text-ucv-text">Unified Calendar View</span>
+        </div>
+        <h1 className="text-[22px] font-bold text-center text-ucv-text mb-1.5">
+          {step === 1 && 'Reset your password'}
+          {step === 2 && 'Check your email'}
+          {step === 3 && 'New Password'}
+        </h1>
+        <p className="text-ucv-text-muted text-sm text-center mb-7">
+          {step === 1 && "No worries, we'll help you reset it"}
+          {step === 2 && 'Check your email for the code'}
+          {step === 3 && 'Choose a strong password'}
+        </p>
 
-            {error && (
-              <Alert
-                severity="error"
-                sx={{
-                  width: '100%',
-                  mb: 3,
-                  borderRadius: 2,
-                  '& .MuiAlert-icon': {
-                    fontSize: '1.5rem',
-                  },
-                }}
-              >
-                {error}
-              </Alert>
-            )}
+        {error && (
+          <div className="w-full mb-5 p-3 rounded-lg bg-ucv-danger-light border border-ucv-danger-border text-ucv-danger text-sm">
+            {error}
+          </div>
+        )}
 
-            {success && (
-              <Alert
-                severity="success"
-                sx={{
-                  width: '100%',
-                  mb: 3,
-                  borderRadius: 2,
-                  '& .MuiAlert-icon': {
-                    fontSize: '1.5rem',
-                  },
-                }}
-              >
-                {success}
-              </Alert>
-            )}
+        {success && (
+          <div className="w-full mb-5 p-3 rounded-lg bg-ucv-green-light border border-ucv-green/30 text-ucv-green text-sm">
+            {success}
+          </div>
+        )}
 
-            {renderStepContent()}
+        {renderStepContent()}
 
-            <Box sx={{ textAlign: 'center', mt: 2 }}>
-              <Link
-                component={RouterLink}
-                to="/login"
-                sx={{
-                  color: 'text.secondary',
-                  textDecoration: 'none',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 0.5,
-                  '&:hover': {
-                    color: '#667eea',
-                    textDecoration: 'underline',
-                  },
-                }}
-              >
-                <ArrowLeft size={16} />
-                Back to Login
-              </Link>
-            </Box>
-          </Box>
-        </Paper>
-      </Container>
-    </Box>
+        <div className="text-center mt-6">
+          <RouterLink
+            to="/login"
+            className="inline-flex items-center gap-1.5 text-sm text-ucv-text-muted hover:text-ucv-primary transition-colors"
+          >
+            <ArrowLeft size={16} />
+            Back to Login
+          </RouterLink>
+        </div>
+      </div>
+    </div>
   );
 };
 

@@ -1,5 +1,4 @@
 import React from 'react';
-import { FaTimes, FaCalendar, FaMapMarkerAlt, FaUsers, FaInfoCircle, FaExternalLinkAlt } from 'react-icons/fa';
 import { format } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 
@@ -76,9 +75,9 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const getCalendarColor = (calendarId?: string) => {
     for (const acc of accounts) {
       const cal = acc.calendarList?.find(c => c.calendarId === calendarId);
-      if (cal) return cal.color || '#e0e7ff';
+      if (cal) return cal.color || '#5B6E3A';
     }
-    return '#e0e7ff';
+    return '#5B6E3A';
   };
 
   const getCalendarName = (calendarId?: string) => {
@@ -87,24 +86,6 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
       if (cal) return cal.name;
     }
     return '';
-  };
-
-  const getEventStatusColor = (status: string) => {
-    switch (status) {
-      case 'confirmed': return 'bg-green-100 text-green-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      case 'tentative': return 'bg-yellow-100 text-yellow-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getEventStatusText = (status: string) => {
-    switch (status) {
-      case 'confirmed': return 'Confirmed';
-      case 'cancelled': return 'Cancelled';
-      case 'tentative': return 'Tentative';
-      default: return 'Unknown';
-    }
   };
 
   const formatTime = (dateTime: string, timezone: string) => {
@@ -116,156 +97,94 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
     }
   };
 
+  const timezone = selectedUserTimeZone || 'UTC';
+  const isAllDay = !!(event.isAllDay || event.start.isAllDay);
+  const dateLabel = format(toZonedTime(new Date(event.start.dateTime), timezone), 'EEE, MMM d');
+  const timing = isAllDay
+    ? `${dateLabel} · All day`
+    : `${dateLabel} · ${formatTime(event.start.dateTime, timezone)} – ${formatTime(event.end.dateTime, timezone)}`;
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
-          <div className="flex items-center gap-3">
+    <div
+      className="fixed inset-0 bg-black/25 flex items-center justify-center p-6 z-50"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[340px] bg-white rounded-xl shadow-lg p-[22px] flex flex-col gap-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
             <div
-              className="w-4 h-4 rounded-full"
+              className="w-3 h-3 rounded-[3px] flex-shrink-0"
               style={{ backgroundColor: getCalendarColor(event.calendarId) }}
             />
-            <h2 className="text-2xl font-bold text-gray-900">{event.title}</h2>
+            <h3 className="text-[17px] font-bold text-ucv-text m-0">{event.title}</h3>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+            className="p-0.5 text-ucv-text-muted hover:opacity-60 transition-opacity flex-shrink-0"
           >
-            <FaTimes className="w-5 h-5" />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 overflow-y-auto max-h-[70vh] space-y-6">
-          {/* Event Status */}
-          <div className="flex items-center gap-3">
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getEventStatusColor(event.status)}`}>
-              {getEventStatusText(event.status)}
-            </span>
-            {event.isRecurring && (
-              <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
-                Recurring
-              </span>
-            )}
-            {event.isAllDay && (
-              <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">
-                All Day
-              </span>
-            )}
-          </div>
-
-          {/* Description */}
-          {event.description && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-gray-600">
-                <FaInfoCircle className="w-4 h-4" />
-                <span className="text-sm font-semibold">Description</span>
-              </div>
-              <p className="text-gray-700 bg-gray-50 p-3 rounded-lg border border-gray-200">
-                {event.description}
-              </p>
-            </div>
-          )}
-
-          {/* Date and Time */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-gray-600">
-              <FaCalendar className="w-4 h-4" />
-              <span className="text-sm font-semibold">Date & Time</span>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-              {event.isAllDay ? (
-                <div className="text-gray-700">
-                  <div className="font-medium">
-                    {format(toZonedTime(new Date(event.start.dateTime), selectedUserTimeZone || 'UTC'), 'EEEE, MMMM d, yyyy')}
-                  </div>
-                  <div className="text-sm text-gray-600">All day event</div>
-                </div>
-              ) : (
-                <div className="text-gray-700">
-                  <div className="font-medium">
-                    {format(toZonedTime(new Date(event.start.dateTime), selectedUserTimeZone || 'UTC'), 'EEEE, MMMM d, yyyy')}
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    {formatTime(event.start.dateTime, selectedUserTimeZone || 'UTC')} - {formatTime(event.end.dateTime, selectedUserTimeZone || 'UTC')}
-                  </div>
-                </div>
-              )}
+        <div className="flex flex-col gap-3">
+          {/* Time + calendar */}
+          <div className="flex gap-2.5 items-start">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A8A29E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 flex-shrink-0">
+              <circle cx="12" cy="12" r="9"></circle>
+              <polyline points="12 7 12 12 15 15"></polyline>
+            </svg>
+            <div>
+              <div className="text-sm font-semibold text-ucv-text">{timing}</div>
+              <div className="text-xs text-ucv-text-faint mt-0.5">{getCalendarName(event.calendarId)}</div>
             </div>
           </div>
 
           {/* Location */}
           {event.location && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-gray-600">
-                <FaMapMarkerAlt className="w-4 h-4" />
-                <span className="text-sm font-semibold">Location</span>
-              </div>
-              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                <p className="text-gray-700">{event.location}</p>
-              </div>
+            <div className="flex gap-2.5 items-start min-w-0">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A8A29E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 flex-shrink-0">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+              <div className="text-sm text-ucv-text-secondary break-words min-w-0">{event.location}</div>
             </div>
           )}
 
-          {/* Calendar */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-gray-600">
-              <FaCalendar className="w-4 h-4" />
-              <span className="text-sm font-semibold">Calendar</span>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: getCalendarColor(event.calendarId) }}
-                />
-                <span className="text-gray-700">{getCalendarName(event.calendarId)}</span>
-              </div>
-            </div>
-          </div>
-
           {/* Organizer */}
           {event.organizer && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-gray-600">
-                <FaUsers className="w-4 h-4" />
-                <span className="text-sm font-semibold">Organizer</span>
-              </div>
-              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                <div className="text-gray-700">
-                  <div className="font-medium">{event.organizer.name}</div>
-                  <div className="text-sm text-gray-600">{event.organizer.email}</div>
-                </div>
+            <div className="flex gap-2.5 items-start">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A8A29E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 flex-shrink-0">
+                <circle cx="12" cy="8" r="4"></circle>
+                <path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path>
+              </svg>
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold text-ucv-text-faint uppercase tracking-wide mb-0.5">Organizer</div>
+                <div className="text-sm text-ucv-text break-words">{event.organizer.name || event.organizer.email}</div>
               </div>
             </div>
           )}
 
           {/* Attendees */}
           {event.attendees && event.attendees.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-gray-600">
-                <FaUsers className="w-4 h-4" />
-                <span className="text-sm font-semibold">Attendees ({event.attendees.length})</span>
-              </div>
-              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                <div className="space-y-2">
+            <div className="flex gap-2.5 items-start">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A8A29E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 flex-shrink-0">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+              <div className="flex-1">
+                <div className="text-[11px] font-bold text-ucv-text-faint uppercase tracking-wide mb-1.5">Attendees</div>
+                <div className="flex flex-col gap-1">
                   {event.attendees.map((attendee, index) => (
-                    <div key={index} className="flex items-center justify-between">
-                      <div className="text-gray-700">
-                        <div className="font-medium">{attendee.name || attendee.email}</div>
-                        {attendee.name && attendee.email !== attendee.name && (
-                          <div className="text-sm text-gray-600">{attendee.email}</div>
-                        )}
-                      </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                        attendee.responseStatus === 'accepted' ? 'bg-green-100 text-green-800' :
-                        attendee.responseStatus === 'declined' ? 'bg-red-100 text-red-800' :
-                        attendee.responseStatus === 'tentative' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {attendee.responseStatus || 'No response'}
-                      </span>
+                    <div key={index} className="text-sm text-ucv-text-secondary break-words">
+                      {attendee.name || attendee.email}
                     </div>
                   ))}
                 </div>
@@ -273,61 +192,13 @@ const EventDetailModal: React.FC<EventDetailModalProps> = ({
             </div>
           )}
 
-          {/* External Link */}
-          {event.htmlLink && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-gray-600">
-                <FaExternalLinkAlt className="w-4 h-4" />
-                <span className="text-sm font-semibold">External Link</span>
-              </div>
-              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                <a
-                  href={event.htmlLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 underline break-all"
-                >
-                  {event.htmlLink}
-                </a>
-              </div>
+          {/* Description */}
+          {event.description && (
+            <div className="border-t border-ucv-border-light pt-3.5 min-w-0">
+              <div className="text-[11px] font-bold text-ucv-text-faint uppercase tracking-wide mb-1.5">Description</div>
+              <div className="text-sm text-ucv-text-secondary leading-relaxed break-words">{event.description}</div>
             </div>
           )}
-
-          {/* Event Details */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-gray-600">
-              <FaInfoCircle className="w-4 h-4" />
-              <span className="text-sm font-semibold">Event Details</span>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Source:</span>
-                <span className="text-gray-700 capitalize">{event.source}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Last Updated:</span>
-                <span className="text-gray-700">
-                  {format(new Date(event.updatedAt), 'MMM d, yyyy h:mm a')}
-                </span>
-              </div>
-              {event.recurringEventId && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Recurring Event ID:</span>
-                  <span className="text-gray-700 font-mono text-xs">{event.recurringEventId}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end p-6 border-t border-gray-100">
-          <button
-            onClick={onClose}
-            className="px-6 py-3 bg-gray-600 text-white rounded-xl hover:bg-gray-700 transition-all duration-200 font-medium"
-          >
-            Close
-          </button>
         </div>
       </div>
     </div>

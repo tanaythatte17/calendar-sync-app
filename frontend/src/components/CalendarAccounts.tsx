@@ -1,5 +1,6 @@
-import React from 'react';
-import { FaGoogle, FaMicrosoft, FaPlus } from 'react-icons/fa';
+import React, { useState } from 'react';
+import { FaPlus } from 'react-icons/fa';
+import { GoogleIcon, MicrosoftIcon } from './icons/BrandIcons';
 import Account from './Account';
 
 interface CalendarListItem {
@@ -25,8 +26,6 @@ interface CalendarAccountsProps {
   onConnectMicrosoft: () => void;
   onSync: (provider: string, email: string) => Promise<void>;
   onDelete: (accountId: string) => Promise<void>;
-  openMenuId: string | null;
-  onMenuToggle: (accountId: string) => void;
 }
 
 const CalendarAccounts: React.FC<CalendarAccountsProps> = ({
@@ -36,69 +35,86 @@ const CalendarAccounts: React.FC<CalendarAccountsProps> = ({
   onConnectGoogle,
   onConnectMicrosoft,
   onSync,
-  onDelete,
-  openMenuId,
-  onMenuToggle
+  onDelete
 }) => {
-  return (
-    <div className="space-y-6">
-      {/* Connected Accounts Section */}
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-gray-900">Connected Accounts</h2>
-        </div>
-        
-        {accounts.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FaPlus className="w-8 h-8 text-gray-400" />
-            </div>
-            <p className="text-gray-500 text-sm mb-4">No calendar accounts connected yet</p>
-            <p className="text-gray-400 text-xs">Connect your accounts to start syncing events</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {accounts.map((account) => (
-              <Account
-                key={account._id || account.id || `${account.provider}-${account.email}`}
-                account={account}
-                selectedCalendars={selectedCalendars}
-                onCalendarToggle={onCalendarToggle}
-                onSync={onSync}
-                onDelete={onDelete}
-                openMenuId={openMenuId}
-                onMenuToggle={onMenuToggle}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+  const [isConnectDialogOpen, setIsConnectDialogOpen] = useState(false);
 
-      {/* Connect New Accounts Section */}
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Connect New Account</h3>
-        <div className="space-y-3">
-          <button
-            onClick={onConnectGoogle}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 border-2 border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-sm hover:shadow-md"
-          >
-            <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-red-600 rounded-lg flex items-center justify-center">
-              <FaGoogle className="text-white w-4 h-4" />
-            </div>
-            <span>Connect Google Calendar</span>
-          </button>
-          
-          <button
-            onClick={onConnectMicrosoft}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 border-2 border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200 shadow-sm hover:shadow-md"
-          >
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center">
-              <FaMicrosoft className="text-white w-4 h-4" />
-            </div>
-            <span>Connect Microsoft Calendar</span>
-          </button>
+  return (
+    <div className="bg-white rounded-xl border border-ucv-border p-5">
+      <span className="text-xs font-bold text-ucv-text-faint uppercase tracking-wide block mb-3">
+        Connected Accounts
+      </span>
+
+      {accounts.length === 0 ? (
+        <div className="text-center py-8">
+          <div className="w-16 h-16 bg-ucv-surface rounded-full flex items-center justify-center mx-auto mb-4">
+            <FaPlus className="w-8 h-8 text-ucv-text-faint" />
+          </div>
+          <p className="text-ucv-text-muted text-sm mb-4">No calendar accounts connected yet</p>
+          <p className="text-ucv-text-faint text-xs">Connect your accounts to start syncing events</p>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {accounts.map((account) => (
+            <Account
+              key={account._id || account.id || `${account.provider}-${account.email}`}
+              account={account}
+              selectedCalendars={selectedCalendars}
+              onCalendarToggle={onCalendarToggle}
+              onSync={onSync}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      )}
+
+      <button
+        onClick={() => setIsConnectDialogOpen(true)}
+        className="w-full mt-2.5 border-[1.5px] border-dashed border-ucv-text-disabled bg-none text-ucv-text-secondary py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5 hover:border-ucv-primary hover:text-ucv-primary transition-colors"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        Connect Calendar
+      </button>
+
+      {isConnectDialogOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={() => setIsConnectDialogOpen(false)}
+        >
+          <div
+            className="w-full max-w-[360px] bg-white rounded-xl p-7 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-ucv-text mb-1">Connect a calendar</h3>
+            <p className="text-ucv-text-muted text-sm mb-5">Choose a provider to connect via secure OAuth 2.0.</p>
+            <div className="flex flex-col gap-2.5">
+              <button
+                onClick={() => { setIsConnectDialogOpen(false); onConnectGoogle(); }}
+                className="flex items-center gap-2.5 border border-ucv-border bg-white px-3.5 py-2.5 rounded-lg text-sm font-semibold text-ucv-text hover:bg-ucv-surface hover:border-ucv-text-disabled transition-colors"
+              >
+                <GoogleIcon size={18} />
+                Continue with Google
+              </button>
+              <button
+                onClick={() => { setIsConnectDialogOpen(false); onConnectMicrosoft(); }}
+                className="flex items-center gap-2.5 border border-ucv-border bg-white px-3.5 py-2.5 rounded-lg text-sm font-semibold text-ucv-text hover:bg-ucv-surface hover:border-ucv-text-disabled transition-colors"
+              >
+                <MicrosoftIcon size={16} />
+                Continue with Microsoft
+              </button>
+            </div>
+            <button
+              onClick={() => setIsConnectDialogOpen(false)}
+              className="w-full mt-3.5 border-none bg-none text-ucv-text-muted text-sm font-semibold py-1.5 hover:text-ucv-text-secondary transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

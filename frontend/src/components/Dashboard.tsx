@@ -108,7 +108,6 @@ const Dashboard: React.FC = () => {
   const [selectedCalendars, setSelectedCalendars] = useState<{ [calendarId: string]: boolean }>({});
   const [selectedUserTimeZone, setSelectedUserTimeZone] = useState(user?.timezone || 'UTC');
   const [tzSaveStatus, setTzSaveStatus] = useState<string | null>(null);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [connectionSuccess, setConnectionSuccess] = useState<string | null>(null);
 
@@ -378,7 +377,6 @@ const Dashboard: React.FC = () => {
       await api.delete(`${API_URL}/calendarAccount/delete/${accountId}`);
       setAccounts(accounts.filter(acc => acc.id !== accountId && acc._id !== accountId));
       setEvents(events.filter(event => event.calendarAccountId !== accountId));
-      setOpenMenuId(null);
       alert('Calendar account deleted successfully');
     } catch (err) {
       setError('Failed to delete calendar account');
@@ -451,40 +449,36 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleMenuToggle = (accountId: string) => {
-    setOpenMenuId(openMenuId === accountId ? null : accountId);
-  };
-
   const handleDateClick = (date: Date) => {
     setSelectedDate(date);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+      <div className="min-h-screen bg-ucv-surface flex items-center justify-center">
         <div className="flex flex-col items-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
-          <p className="text-gray-700 text-base">Loading your calendar...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-ucv-primary border-t-transparent mb-4"></div>
+          <p className="text-ucv-text-secondary text-base">Loading your calendar...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+    <div className="min-h-screen bg-ucv-surface">
       {/* Success Message for Account Connection */}
       {connectionSuccess && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
-          <div className="p-4 bg-green-50 border border-green-200 rounded-xl shadow-sm">
-            <p className="text-green-700 flex items-center">
+          <div className="p-4 bg-ucv-green-light border border-ucv-green/30 rounded-xl shadow-sm">
+            <p className="text-ucv-green flex items-center">
               <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               {connectionSuccess}
             </p>
-            <button 
+            <button
               onClick={() => setConnectionSuccess(null)}
-              className="mt-2 text-sm text-green-700 hover:text-green-900 underline"
+              className="mt-2 text-sm text-ucv-green hover:underline"
             >
               Dismiss
             </button>
@@ -495,16 +489,16 @@ const Dashboard: React.FC = () => {
       {/* Error Display */}
       {error && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
-          <div className="p-4 bg-red-50 border border-red-200 rounded-xl shadow-sm">
-            <p className="text-red-600 flex items-center">
+          <div className="p-4 bg-ucv-danger-light border border-ucv-danger-border rounded-xl shadow-sm">
+            <p className="text-ucv-danger flex items-center">
               <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               {error}
             </p>
-            <button 
+            <button
               onClick={() => setError('')}
-              className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
+              className="mt-2 text-sm text-ucv-danger hover:underline"
             >
               Dismiss
             </button>
@@ -515,33 +509,8 @@ const Dashboard: React.FC = () => {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-          {/* Main Calendar Section with Timezone Selector */}
+          {/* Main Calendar Section */}
           <div className="xl:col-span-3">
-            {/* Header with Create Event Button and Timezone Selector */}
-            <div className="flex items-center justify-between mb-4">
-              {/* Timezone Selector */}
-              <div className="flex items-center gap-2">
-                <label htmlFor="user-timezone-select" className="text-sm font-medium text-gray-700">Timezone:</label>
-                <select
-                  id="user-timezone-select"
-                  value={selectedUserTimeZone}
-                  onChange={e => setSelectedUserTimeZone(e.target.value)}
-                  className="bg-white text-gray-900 rounded-lg border border-gray-300 px-3 py-2 text-sm shadow focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-200"
-                >
-                  {userTimeZones.map(tz => (
-                    <option key={tz.value} value={tz.value}>{tz.label}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={handleTimezoneSave}
-                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-xs font-semibold"
-                >
-                  Save
-                </button>
-                {tzSaveStatus && <span className="text-xs text-green-600">{tzSaveStatus}</span>}
-              </div>
-            </div>
-
             {/* Calendar Component with Lazy Loading */}
             <CalendarComponent
               selectedDate={selectedDate}
@@ -556,6 +525,10 @@ const Dashboard: React.FC = () => {
               accounts={accounts}
               loading={loading}
               onViewDateChange={setCurrentViewDate}
+              userTimeZones={userTimeZones}
+              onTimezoneChange={setSelectedUserTimeZone}
+              onTimezoneSave={handleTimezoneSave}
+              tzSaveStatus={tzSaveStatus}
             />
           </div>
 
@@ -569,8 +542,6 @@ const Dashboard: React.FC = () => {
               onConnectMicrosoft={handleConnectMicrosoft}
               onSync={handleSync}
               onDelete={handleDeleteAccount}
-              openMenuId={openMenuId}
-              onMenuToggle={handleMenuToggle}
             />
           </div>
         </div>
