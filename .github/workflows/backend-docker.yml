@@ -25,3 +25,10 @@ jobs:
 
       - name: Push backend image
         run: docker push ghcr.io/${{ secrets.GHCR_USERNAME }}/calendar-backend:latest
+        
+name: Check Node and npm versions
+  run: |
+    node -v
+    npm -v
+    cd backend
+    npm ci --omit=dev
