@@ -6,6 +6,7 @@ import { performIncrementalSync, updateGoogleCalendarList } from '../services/go
 import sseService from '../services/sseService.js';
 import dotenv from 'dotenv';
 import logger from "../utils/logger.js";
+import { bullmqRedisConnection } from '../config/bullmqConnection.js';
 
 dotenv.config();
 
@@ -57,6 +58,13 @@ export const googleEventsWorker = new Worker(
     calendarInfo.syncToken = newSyncToken;
     await calendarAccount.save();
 
+    sseService.sendSyncStatus(
+      userId,
+      'completed',
+      `Synced ${eventsProcessed} events from Google Calendar`,
+      { calendarId, eventsProcessed, provider: 'google' }
+    );
+
     logger.info(`✅ Synced ${eventsProcessed} events for calendarId: ${calendarId}`);
 
     return {
@@ -66,11 +74,7 @@ export const googleEventsWorker = new Worker(
     };
   },
   {
-    connection: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: process.env.REDIS_PORT || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-    },
+    connection: bullmqRedisConnection,
     concurrency: 5, // Process up to 5 jobs simultaneously
   }
 );
@@ -106,11 +110,7 @@ export const googleCalendarListWorker = new Worker(
     };
   },
   {
-    connection: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: process.env.REDIS_PORT || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-    },
+    connection: bullmqRedisConnection,
     concurrency: 3,
   }
 );

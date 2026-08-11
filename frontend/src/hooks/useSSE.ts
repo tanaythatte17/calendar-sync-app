@@ -11,10 +11,26 @@ interface SSEEvent {
   timestamp: string;
 }
 
+export interface SyncStatusDetails {
+  provider?: 'google' | 'microsoft';
+  email?: string;
+  accountId?: string;
+  calendarsSynced?: number;
+  eventsProcessed?: number;
+  calendarId?: string;
+  error?: string;
+}
+
+export interface SyncStatusPayload {
+  status: 'started' | 'completed' | 'error';
+  message?: string;
+  details?: SyncStatusDetails;
+}
+
 interface UseSSEOptions {
   onEvent?: (event: SSEEvent) => void;
   onCalendarListUpdate?: (data: any) => void;
-  onSyncStatus?: (status: string) => void;
+  onSyncStatus?: (payload: SyncStatusPayload) => void;
 }
 
 export const useSSE = (options: UseSSEOptions = {}) => {
@@ -25,6 +41,16 @@ export const useSSE = (options: UseSSEOptions = {}) => {
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
   const baseReconnectDelay = 1000; // 1 second
+
+  // The connection (and its onmessage handler) is only set up once, on
+  // mount, and reused across reconnects — so the handler must always read
+  // callbacks through this ref (updated every render) rather than closing
+  // over `options` directly, or it would stay frozen with whatever
+  // callbacks existed on the very first render.
+  const optionsRef = useRef(options);
+  useEffect(() => {
+    optionsRef.current = options;
+  });
 
   const connect = () => {
     if (eventSourceRef.current?.readyState === EventSource.OPEN) {
@@ -55,15 +81,19 @@ export const useSSE = (options: UseSSEOptions = {}) => {
             break;
             
           case 'event':
-            options.onEvent?.(data);
+            optionsRef.current.onEvent?.(data);
             break;
-            
+
           case 'calendarList':
-            options.onCalendarListUpdate?.(data.data);
+            optionsRef.current.onCalendarListUpdate?.(data.data);
             break;
-            
+
           case 'syncStatus':
-            options.onSyncStatus?.(data.status || 'completed');
+            optionsRef.current.onSyncStatus?.({
+              status: (data.status as 'started' | 'completed' | 'error') || 'completed',
+              message: data.message,
+              details: data.details,
+            });
             break;
             
           default:

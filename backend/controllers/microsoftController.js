@@ -1,4 +1,6 @@
-import { connect, callback, sync, createMicrosoftNotifications, renewMicrosoftNotification } from "../services/microsoftService.js";
+import { connect, callback, createMicrosoftNotifications, renewMicrosoftNotification } from "../services/microsoftService.js";
+import calendarAccountModel from "../models/calendarAccountModel.js";
+import { microsoftInitialSyncQueue } from "../services/queueService.js";
 
 /**
  * Initiate Microsoft Outlook Calendar OAuth connection.
@@ -36,20 +38,40 @@ export const microsoftCallback = async (req, res) => {
 
 /**
  * Trigger initial full sync of all Microsoft Outlook calendars for a user.
- * Fetches all calendars and events, sets up webhooks.
+ * Enqueues a background job instead of syncing inline; the worker fetches
+ * all calendars and events, sets up webhooks, and reports progress over SSE.
  *
  * @param {Object} req - Express request object
  * @param {Object} req.user - Authenticated user
  * @param {string} req.query.email - Microsoft calendar account email
  * @param {Object} res - Express response object
- * @returns {Object} Sync result with calendar count and event count
+ * @returns {Object} { status: 'queued', accountId, provider, email }
  */
 export const syncMicrosoft = async (req, res) => {
   try {
-    const result = await sync(req.user?._id, req.query.email || req.user?.email);
-    res.json(result);
+    const userId = req.user?._id;
+    const userEmail = req.query.email || req.user?.email;
+    if (!userId || !userEmail) {
+      return res.status(400).json({ error: 'Missing userId or email in request.' });
+    }
+
+    const account = await calendarAccountModel.findOne({ userId, provider: 'microsoft', email: userEmail });
+    if (!account) {
+      return res.status(400).json({ error: 'No linked Microsoft account found.' });
+    }
+
+    account.syncStatus = 'queued';
+    await account.save();
+
+    await microsoftInitialSyncQueue.add(
+      'initial-sync',
+      { userId: userId.toString(), userEmail, accountId: account._id.toString(), requestedAt: new Date().toISOString() },
+      { jobId: `initial-sync-${account._id}`, removeOnComplete: true }
+    );
+
+    res.status(202).json({ status: 'queued', accountId: account._id, provider: 'microsoft', email: userEmail });
   } catch (err) {
-    res.status(err.statusCode || 500).json({ error: 'Microsoft sync failed', details: err.message });
+    res.status(err.statusCode || 500).json({ error: 'Failed to queue Microsoft initial sync', details: err.message });
   }
 };
 

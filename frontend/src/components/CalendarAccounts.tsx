@@ -26,6 +26,7 @@ interface CalendarAccountsProps {
   onConnectMicrosoft: () => void;
   onSync: (provider: string, email: string) => Promise<void>;
   onDelete: (accountId: string) => Promise<void>;
+  syncingAccountIds?: { [accountId: string]: boolean };
 }
 
 const CalendarAccounts: React.FC<CalendarAccountsProps> = ({
@@ -35,7 +36,8 @@ const CalendarAccounts: React.FC<CalendarAccountsProps> = ({
   onConnectGoogle,
   onConnectMicrosoft,
   onSync,
-  onDelete
+  onDelete,
+  syncingAccountIds = {}
 }) => {
   const [isConnectDialogOpen, setIsConnectDialogOpen] = useState(false);
 
@@ -63,6 +65,7 @@ const CalendarAccounts: React.FC<CalendarAccountsProps> = ({
               onCalendarToggle={onCalendarToggle}
               onSync={onSync}
               onDelete={onDelete}
+              isSyncing={!!syncingAccountIds[account._id || account.id]}
             />
           ))}
         </div>

@@ -5,7 +5,7 @@ import CalendarComponent from './Calendar';
 import CalendarAccounts from './CalendarAccounts';
 import EventCreationModal from './EventCreationModal';
 import EventDetailModal from './EventDetailModal';
-import { useSSE } from '../hooks/useSSE';
+import { useSSE, SyncStatusPayload } from '../hooks/useSSE';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -21,7 +21,14 @@ interface CalendarAccount {
   provider: 'google' | 'microsoft';
   email: string;
   isConnected: boolean;
+  syncStatus?: 'idle' | 'queued' | 'syncing' | 'error';
   calendarList?: CalendarListItem[];
+}
+
+interface SyncingAccountInfo {
+  provider: string;
+  email: string;
+  status: 'queued' | 'syncing';
 }
 
 interface Event {
@@ -110,6 +117,7 @@ const Dashboard: React.FC = () => {
   const [tzSaveStatus, setTzSaveStatus] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [connectionSuccess, setConnectionSuccess] = useState<string | null>(null);
+  const [syncingAccounts, setSyncingAccounts] = useState<{ [accountId: string]: SyncingAccountInfo }>({});
 
   // Simplified lazy loading state - track loaded ranges with strings for easier comparison
   const loadedMinDateRef = useRef<Date | null>(null);
@@ -119,10 +127,15 @@ const Dashboard: React.FC = () => {
   const eventsRef = useRef<Event[]>([]);
   const isInitialLoadRef = useRef(false);
   const [currentViewDate, setCurrentViewDate] = useState<Date>(new Date());
+  const currentViewDateRef = useRef<Date>(currentViewDate);
 
   useEffect(() => {
     eventsRef.current = events;
   }, [events]);
+
+  useEffect(() => {
+    currentViewDateRef.current = currentViewDate;
+  }, [currentViewDate]);
 
   // SSE hook for real-time updates
   useSSE({
@@ -150,7 +163,7 @@ const Dashboard: React.FC = () => {
       }
     },
     onCalendarListUpdate: (calendarData) => {
-      setAccounts(prevAccounts => 
+      setAccounts(prevAccounts =>
         prevAccounts.map(account => {
           if (account.provider === calendarData.provider && account.email === calendarData.email) {
             return { ...account, calendarList: calendarData.calendarList };
@@ -158,6 +171,47 @@ const Dashboard: React.FC = () => {
           return account;
         })
       );
+    },
+    onSyncStatus: (payload: SyncStatusPayload) => {
+      const accountId = payload.details?.accountId;
+
+      if (payload.status === 'started') {
+        if (accountId) {
+          setSyncingAccounts(prev => ({
+            ...prev,
+            [accountId]: {
+              provider: payload.details?.provider ?? '',
+              email: payload.details?.email ?? '',
+              status: 'syncing',
+            },
+          }));
+        }
+      } else if (payload.status === 'completed') {
+        if (accountId) {
+          activeSyncPollsRef.current.delete(accountId); // the polling fallback can stop, SSE beat it to it
+          setSyncingAccounts(prev => {
+            if (!(accountId in prev)) return prev;
+            const next = { ...prev };
+            delete next[accountId];
+            return next;
+          });
+        }
+        // `events` itself isn't cleared (only range-cache bookkeeping), so
+        // other accounts' already-loaded events stay visible while this
+        // reload runs.
+        forceReloadEvents();
+      } else if (payload.status === 'error') {
+        if (accountId) {
+          activeSyncPollsRef.current.delete(accountId);
+          setSyncingAccounts(prev => {
+            if (!(accountId in prev)) return prev;
+            const next = { ...prev };
+            delete next[accountId];
+            return next;
+          });
+        }
+        setError(payload.details?.error ? `Sync failed: ${payload.details.error}` : 'Calendar sync failed');
+      }
     },
   });
 
@@ -288,12 +342,97 @@ const Dashboard: React.FC = () => {
     checkAndLoadIfNeeded(currentViewDate);
   }, [currentViewDate, checkAndLoadIfNeeded]);
 
+  // Force a fresh events fetch around whatever month the user is currently
+  // viewing, bypassing the range-cache dedupe. Used once a sync completes
+  // (via SSE, and as a fallback via polling below) so newly-synced events
+  // show up without the user needing to manually refresh the page.
+  const forceReloadEvents = useCallback(() => {
+    loadingRangesRef.current.clear();
+    loadedRangesRef.current.clear();
+    loadedMinDateRef.current = null;
+    loadedMaxDateRef.current = null;
+    isInitialLoadRef.current = true;
+
+    const viewDate = currentViewDateRef.current;
+    const viewStart = new Date(viewDate.getFullYear(), viewDate.getMonth() - 3, 1);
+    const viewEnd = new Date(viewDate.getFullYear(), viewDate.getMonth() + 3, 1);
+    loadEventsForRange(viewStart, viewEnd).then(() => checkAndLoadIfNeeded(viewDate));
+  }, [loadEventsForRange, checkAndLoadIfNeeded]);
+
+  // Fallback for when the SSE 'completed' message is missed (e.g. the SSE
+  // connection was still (re)establishing when the job finished). Polls the
+  // persisted per-account syncStatus until it leaves 'queued'/'syncing',
+  // then force-reloads events — guaranteeing the dashboard updates even
+  // without relying on the live SSE message ever arriving.
+  const activeSyncPollsRef = useRef<Set<string>>(new Set());
+  const pollAccountSyncStatus = useCallback((accountId: string) => {
+    if (activeSyncPollsRef.current.has(accountId)) return;
+    activeSyncPollsRef.current.add(accountId);
+
+    const maxAttempts = 60; // ~3 minutes at 3s intervals
+    let attempt = 0;
+
+    const stopPolling = () => {
+      activeSyncPollsRef.current.delete(accountId);
+      setSyncingAccounts(prev => {
+        if (!(accountId in prev)) return prev;
+        const next = { ...prev };
+        delete next[accountId];
+        return next;
+      });
+    };
+
+    const tick = async () => {
+      attempt += 1;
+      try {
+        const res = await api.get(`${API_URL}/user/accounts`);
+        const accountsData: CalendarAccount[] = res.data;
+        setAccounts(accountsData);
+
+        const account = accountsData.find(a => (a._id || a.id) === accountId);
+        if (!account || account.syncStatus === 'idle') {
+          stopPolling();
+          forceReloadEvents();
+          return;
+        }
+        if (account.syncStatus === 'error') {
+          stopPolling();
+          setError('Calendar sync failed');
+          return;
+        }
+      } catch (err) {
+        console.error('Error polling sync status:', err);
+      }
+
+      if (attempt < maxAttempts) {
+        setTimeout(tick, 3000);
+      } else {
+        stopPolling();
+      }
+    };
+
+    setTimeout(tick, 3000);
+  }, [api, forceReloadEvents]);
+
   // Initial data fetch
   const fetchInitialData = useCallback(async () => {
     setLoading(true);
     try {
       const accountsRes = await api.get(`${API_URL}/user/accounts`);
       setAccounts(accountsRes.data);
+
+      // Seed syncing indicators from persisted account status, so a reload
+      // mid-sync still shows "syncing" instead of relying solely on a live
+      // SSE message that may have been missed while the tab was closed.
+      const stillSyncing: { [accountId: string]: SyncingAccountInfo } = {};
+      (accountsRes.data as CalendarAccount[]).forEach(account => {
+        const id = account._id || account.id;
+        if (id && (account.syncStatus === 'queued' || account.syncStatus === 'syncing')) {
+          stillSyncing[id] = { provider: account.provider, email: account.email, status: account.syncStatus };
+        }
+      });
+      setSyncingAccounts(stillSyncing);
+      Object.keys(stillSyncing).forEach(id => pollAccountSyncStatus(id));
 
       // Load initial events range (current month ±3 months)
       const now = new Date();
@@ -311,7 +450,7 @@ const Dashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [api, loadEventsForRange]); // ✅ Now safe since loadEventsForRange is stable
+  }, [api, loadEventsForRange, pollAccountSyncStatus]); // ✅ Now safe since these are stable
 
   // Load initial data on mount
   useEffect(() => {
@@ -386,28 +525,24 @@ const Dashboard: React.FC = () => {
   };
 
   const handleSync = async (provider: string, email: string) => {
-    setLoading(true);
     setError('');
     try {
       const syncUrl = `${API_URL}/${provider}/sync/${provider}?email=${encodeURIComponent(email)}`;
-      await api.get(syncUrl);
-      setError('');
-      alert(`${provider.charAt(0).toUpperCase() + provider.slice(1)} calendar synced!`);
-      
-      // ✅ Reset all state and refs properly
-      setEvents([]);
-      loadingRangesRef.current.clear();
-      loadedRangesRef.current.clear();
-      loadedMinDateRef.current = null;
-      loadedMaxDateRef.current = null;
-      isInitialLoadRef.current = false;
-      eventsRef.current = []; // ✅ Added this
-      
-      await fetchInitialData();
+      const res = await api.get(syncUrl);
+      const accountId: string | undefined = res.data?.accountId;
+      if (accountId) {
+        setSyncingAccounts(prev => ({
+          ...prev,
+          [accountId]: { provider, email, status: 'queued' },
+        }));
+        // Sync now runs in the background. The SSE onSyncStatus handler
+        // above clears the "syncing" indicator and reloads events as soon
+        // as it completes; this poll is a fallback in case that message
+        // is ever missed (e.g. a dropped/reconnecting SSE connection).
+        pollAccountSyncStatus(accountId);
+      }
     } catch (err) {
-      setError(`Failed to sync ${provider} calendar`);
-    } finally {
-      setLoading(false);
+      setError(`Failed to queue ${provider} calendar sync`);
     }
   };
 
@@ -486,6 +621,20 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Non-blocking Sync Progress Banner */}
+      {Object.keys(syncingAccounts).length > 0 && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+          <div className="p-4 bg-ucv-surface-alt border border-ucv-border rounded-xl shadow-sm">
+            {Object.values(syncingAccounts).map((info, idx) => (
+              <p key={idx} className="text-ucv-text-secondary flex items-center text-sm">
+                <span className="animate-spin rounded-full h-4 w-4 border-2 border-ucv-primary border-t-transparent mr-2 flex-shrink-0"></span>
+                Syncing your {info.provider.charAt(0).toUpperCase() + info.provider.slice(1)} calendar ({info.email})…
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Error Display */}
       {error && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2">
@@ -542,6 +691,7 @@ const Dashboard: React.FC = () => {
               onConnectMicrosoft={handleConnectMicrosoft}
               onSync={handleSync}
               onDelete={handleDeleteAccount}
+              syncingAccountIds={Object.fromEntries(Object.keys(syncingAccounts).map(id => [id, true]))}
             />
           </div>
         </div>

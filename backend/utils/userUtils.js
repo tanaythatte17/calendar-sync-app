@@ -4,15 +4,16 @@ import Event from "../models/eventModel.js";
 export const getAllCalendarAccounts = async (userId) => {
   const accounts = await calendarAccount
     .find({ userId })
-    .select('_id provider email accessToken expiresAt calendarList')
+    .select('_id provider email accessToken expiresAt calendarList syncStatus')
     .lean();
-  
+
   return accounts.map(account => ({
     id: account._id.toString(),
     _id: account._id.toString(),
     provider: account.provider,
     email: account.email,
     isConnected: !!(account.accessToken && account.expiresAt > new Date()),
+    syncStatus: account.syncStatus || 'idle',
     calendarList: account.calendarList?.map(calendar => ({
       calendarId: calendar.calendarId,
       name: calendar.name,

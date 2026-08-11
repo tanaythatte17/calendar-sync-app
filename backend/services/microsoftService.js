@@ -132,7 +132,7 @@ export async function sync(userId, userEmail) {
     let deltaLink = calendarEntry.deltaLink;
     try {
       if (!deltaLink) {
-        const { eventsProcessed, newDeltaLink } = await performMicrosoftFullSync(calendarId, headers, account._id, startTime, endTime);
+        const { eventsProcessed, newDeltaLink } = await performMicrosoftFullSync(calendarId, headers, account._id, startTime, endTime, userId);
         totalEvents += eventsProcessed;
         calendarEntry.deltaLink = newDeltaLink;
       } else {
@@ -142,7 +142,7 @@ export async function sync(userId, userEmail) {
       }
     } catch (err) {
       if (err.response?.status === 410) {
-        const { eventsProcessed, newDeltaLink } = await performMicrosoftFullSync(calendarId, headers, account._id, startTime, endTime);
+        const { eventsProcessed, newDeltaLink } = await performMicrosoftFullSync(calendarId, headers, account._id, startTime, endTime, userId);
         totalEvents += eventsProcessed;
         calendarEntry.deltaLink = newDeltaLink;
       } else {
@@ -343,7 +343,7 @@ export async function updateMicrosoftCalendarList(account, headers) {
   await account.save();
 }
 
-export async function performMicrosoftFullSync(calendarId, headers, accountId, startTime, endTime) {
+export async function performMicrosoftFullSync(calendarId, headers, accountId, startTime, endTime, userId = null) {
   const expandedEvents = await fetchExpandedEvents(calendarId, startTime, endTime, headers);
   const existingEvents = await Event.find({ calendarAccountId: accountId, calendarId, source: 'microsoft' }).select('externalId');
   const existingEventIds = new Set(existingEvents.map(e => e.externalId));
@@ -352,7 +352,7 @@ export async function performMicrosoftFullSync(calendarId, headers, accountId, s
   if (eventsToDelete.length > 0) {
     await Event.deleteMany({ calendarAccountId: accountId, calendarId, source: 'microsoft', externalId: { $in: eventsToDelete } });
   }
-  await processEvents(expandedEvents, accountId, calendarId);
+  await processEvents(expandedEvents, accountId, calendarId, userId);
   const eventsProcessed = expandedEvents.length;
   const deltaRes = await axios.get(`https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/calendarView/delta`, { headers, params: { startDateTime: startTime, endDateTime: endTime, $select: 'id,subject,bodyPreview,location,organizer,attendees,type,seriesMasterId,isAllDay,showAs,webLink,start,end' } });
   const newDeltaLink = await getDeltaLink(deltaRes, headers);

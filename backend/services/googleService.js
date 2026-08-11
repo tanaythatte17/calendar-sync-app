@@ -169,7 +169,7 @@ export async function sync(userId, userEmail) {
   for (let i = 0; i < account.calendarList.length; i++) {
     const calendarEntry = account.calendarList[i];
     const calendarId = calendarEntry.calendarId;
-    const { eventsProcessed, nextSyncToken } = await performFullSync(calendar, calendarId, account._id);
+    const { eventsProcessed, nextSyncToken } = await performFullSync(calendar, calendarId, account._id, userId);
     totalEventsProcessed += eventsProcessed;
     account.calendarList[i].syncToken = nextSyncToken;
   }
@@ -419,7 +419,7 @@ export async function renewNotification(
  * @param {string} accountId - CalendarAccount ID
  * @returns {Object} { eventsProcessed, nextSyncToken }
  */
-export async function performFullSync(calendar, calendarId, accountId) {
+export async function performFullSync(calendar, calendarId, accountId, userId = null) {
   const now = new Date();
   const startDate = new Date(); startDate.setFullYear(now.getFullYear() - 2);
   const endDate = new Date(); endDate.setFullYear(now.getFullYear() + 2);
@@ -439,9 +439,9 @@ export async function performFullSync(calendar, calendarId, accountId) {
 
   const recurringMasters = allMasterEvents.filter(e => e.recurrence && e.recurrence.length > 0);
   const singleEvents = allMasterEvents.filter(e => !e.recurrence || e.recurrence.length === 0);
-  await processBatchEvents(singleEvents, accountId, calendarId);
+  await processBatchEvents(singleEvents, accountId, calendarId, userId);
   for (const master of recurringMasters) {
-    await processRecurringEventMaster(calendar, master, calendarId, accountId, startDate, endDate);
+    await processRecurringEventMaster(calendar, master, calendarId, accountId, startDate, endDate, userId);
   }
 
   const allEventIds = allMasterEvents.map(e => e.id);

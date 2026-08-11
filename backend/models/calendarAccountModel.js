@@ -9,6 +9,7 @@ const CalendarAccountSchema = new mongoose.Schema({
   syncToken: { type: String },     // Google sync token
   deltaLink: { type: String },     // Microsoft delta link
   lastSyncedAt: { type: Date },
+  syncStatus: { type: String, enum: ['idle', 'queued', 'syncing', 'error'], default: 'idle' }, // Initial-sync job status, for reconnect resilience
   expiresAt: {  type: Date },
   calendarList: [{
     calendarId: { type: String, required: true }, // Unique per calendar

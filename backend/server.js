@@ -18,6 +18,8 @@ import { redisClient } from './config/redis.js';
 // Import workers to start them
 import { googleEventsWorker, googleCalendarListWorker } from './workers/googleWebhookWorker.js';
 import { microsoftEventsWorker, microsoftCalendarListWorker } from "./workers/microsoftWebhookWorker.js";
+import { googleInitialSyncWorker } from './workers/googleInitialSyncWorker.js';
+import { microsoftInitialSyncWorker } from './workers/microsoftInitialSyncWorker.js';
 import logger from "./utils/logger.js";
 
 dotenv.config();
@@ -55,6 +57,8 @@ const gracefulShutdown = async () => {
     await googleCalendarListWorker.close();
     await microsoftEventsWorker.close();
     await microsoftCalendarListWorker.close();
+    await googleInitialSyncWorker.close();
+    await microsoftInitialSyncWorker.close();
     logger.info('BullMQ workers closed');
     
     // Close Redis connection

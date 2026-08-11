@@ -6,16 +6,9 @@ import { updateMicrosoftCalendarList, performMicrosoftIncrementalSync, performMi
 import sseService from '../services/sseService.js';
 import dotenv from 'dotenv';
 import logger from "../utils/logger.js";
+import { bullmqRedisConnection as redisConnection } from '../config/bullmqConnection.js';
 
 dotenv.config();
-
-// Redis connection config
-const redisConnection = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379,
-  password: process.env.REDIS_PASSWORD || undefined,
-  tls: process.env.REDIS_TLS === 'true' ? { rejectUnauthorized: false } : undefined,
-};
 
 // Worker for Microsoft Events Webhook
 export const microsoftEventsWorker = new Worker(

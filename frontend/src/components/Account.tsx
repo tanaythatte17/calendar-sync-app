@@ -22,6 +22,7 @@ interface AccountProps {
   onCalendarToggle: (calendarId: string, checked: boolean) => void;
   onSync: (provider: string, email: string) => Promise<void>;
   onDelete: (accountId: string) => Promise<void>;
+  isSyncing?: boolean;
 }
 
 const Account: React.FC<AccountProps> = ({
@@ -29,9 +30,11 @@ const Account: React.FC<AccountProps> = ({
   selectedCalendars,
   onCalendarToggle,
   onSync,
-  onDelete
+  onDelete,
+  isSyncing = false
 }) => {
   const handleSync = async () => {
+    if (isSyncing) return;
     await onSync(account.provider, account.email);
   };
 
@@ -55,15 +58,20 @@ const Account: React.FC<AccountProps> = ({
           </div>
         </div>
         <button
-          title="Sync Calendar"
+          title={isSyncing ? 'Syncing…' : 'Sync Calendar'}
           onClick={handleSync}
-          className="w-6 h-6 border border-ucv-border bg-white rounded-md flex items-center justify-center hover:border-ucv-text-disabled hover:bg-ucv-surface transition-colors flex-shrink-0"
+          disabled={isSyncing}
+          className="w-6 h-6 border border-ucv-border bg-white rounded-md flex items-center justify-center hover:border-ucv-text-disabled hover:bg-ucv-surface transition-colors flex-shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ucv-text-muted">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
+          {isSyncing ? (
+            <span className="animate-spin rounded-full h-3 w-3 border-2 border-ucv-primary border-t-transparent"></span>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ucv-text-muted">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          )}
         </button>
         <button
           title="Disconnect"
