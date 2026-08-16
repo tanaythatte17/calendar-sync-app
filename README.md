@@ -444,12 +444,3 @@ GET /api/sse/status
 - Rate limiting on sensitive endpoints (/auth, /webhook)
 - CORS configured for frontend URL only
 
-## Future Enhancements
-
-- [ ] Batch event operations (drag-drop, multi-select delete)
-- [ ] Event conflict detection
-- [ ] Calendar sharing & guest list management
-- [ ] Mobile notification support
-- [ ] Offline sync queue
-- [ ] Event search/filtering
-- [ ] Timezone-aware recurrence rules
